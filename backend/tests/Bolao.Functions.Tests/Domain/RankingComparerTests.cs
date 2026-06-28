@@ -3,7 +3,7 @@ using FluentAssertions;
 
 namespace Bolao.Functions.Tests.Domain;
 
-public sealed class RankingComparerTests
+public class RankingComparerTests
 {
     [Fact]
     public void SortsHigherTotalPointsFirst()

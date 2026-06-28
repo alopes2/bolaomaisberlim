@@ -3,7 +3,7 @@ using FluentAssertions;
 
 namespace Bolao.Functions.Tests.Domain;
 
-public sealed class ScoreCalculatorTests
+public class ScoreCalculatorTests
 {
     [Theory]
     [InlineData(2, 1, 2, 1, 5)]

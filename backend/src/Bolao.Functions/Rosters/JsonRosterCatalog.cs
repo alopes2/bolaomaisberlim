@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Bolao.Functions.Rosters;
 
-public sealed class JsonRosterCatalog(string path) : IRosterCatalog
+public class JsonRosterCatalog(string path) : IRosterCatalog
 {
     public async Task<TeamRoster> GetTeamAsync(
         string fifaCode,
@@ -27,13 +27,13 @@ public sealed class JsonRosterCatalog(string path) : IRosterCatalog
                 player.Name)).ToList());
     }
 
-    private sealed record JsonTeam(
+    private record JsonTeam(
         [property: JsonPropertyName("fifa_code")] string FifaCode,
         [property: JsonPropertyName("name")] string Name,
         [property: JsonPropertyName("flag_icon")] string FlagIcon,
         [property: JsonPropertyName("players")] IReadOnlyList<JsonPlayer> Players);
 
-    private sealed record JsonPlayer(
+    private record JsonPlayer(
         [property: JsonPropertyName("number")] int Number,
         [property: JsonPropertyName("pos")] string Position,
         [property: JsonPropertyName("name")] string Name);

@@ -70,6 +70,7 @@
 ## Task 1: Scaffold .NET, React and verification commands
 
 **Files:**
+
 - Create: `.gitignore`
 - Create: `README.md`
 - Create: `backend/Bolao.slnx`
@@ -167,6 +168,7 @@ Expected: both test commands pass and the frontend build completes.
 ## Task 2: Load teams and expose stable player identities
 
 **Files:**
+
 - Create: `backend/src/Bolao.Functions/Rosters/RosterModels.cs`
 - Create: `backend/src/Bolao.Functions/Rosters/IRosterCatalog.cs`
 - Create: `backend/src/Bolao.Functions/Rosters/JsonRosterCatalog.cs`
@@ -199,8 +201,8 @@ Expected: FAIL because `JsonRosterCatalog` does not exist.
 Define:
 
 ```csharp
-public sealed record Player(string Key, int Number, string Position, string Name);
-public sealed record TeamRoster(string FifaCode, string Name, string FlagIcon, IReadOnlyList<Player> Players);
+public record Player(string Key, int Number, string Position, string Name);
+public record TeamRoster(string FifaCode, string Name, string FlagIcon, IReadOnlyList<Player> Players);
 
 public interface IRosterCatalog
 {
@@ -223,6 +225,7 @@ Add a test asserting an unknown FIFA code throws `KeyNotFoundException`; run `do
 ## Task 3: Implement scoring and ranking as pure domain code
 
 **Files:**
+
 - Create: `backend/src/Bolao.Functions/Domain/Prediction.cs`
 - Create: `backend/src/Bolao.Functions/Domain/MatchResult.cs`
 - Create: `backend/src/Bolao.Functions/Domain/ScoreCalculator.cs`
@@ -258,19 +261,19 @@ Expected: FAIL because domain types do not exist.
 Use immutable records:
 
 ```csharp
-public sealed record PredictionAnswers(
+public record PredictionAnswers(
     int HomeGoals, int AwayGoals, string FirstScorerKey,
     string HomeTopScorerKey, string AwayTopScorerKey,
     int HomeYellowCards, int AwayYellowCards,
     int HomeRedCards, int AwayRedCards);
 
-public sealed record ConfirmedResult(
+public record ConfirmedResult(
     int HomeGoals, int AwayGoals, string? FirstScorerKey,
     IReadOnlySet<string> HomeTopScorerKeys, IReadOnlySet<string> AwayTopScorerKeys,
     int HomeYellowCards, int AwayYellowCards,
     int HomeRedCards, int AwayRedCards);
 
-public sealed record ScoreBreakdown(
+public record ScoreBreakdown(
     int Result, int FirstScorer, int HomeTopScorer, int AwayTopScorer,
     int HomeYellowCards, int AwayYellowCards, int HomeRedCards, int AwayRedCards)
 {
@@ -294,6 +297,7 @@ Expected: PASS and maximum-score test equals 18.
 ## Task 4: Enforce cutoff, one prediction and edit timestamp
 
 **Files:**
+
 - Create: `backend/src/Bolao.Functions/Domain/Match.cs`
 - Create: `backend/src/Bolao.Functions/Domain/PredictionService.cs`
 - Create: `backend/src/Bolao.Functions/Persistence/IPredictionRepository.cs`
@@ -346,6 +350,7 @@ Expected: PASS.
 ## Task 5: Add DynamoDB persistence and idempotent result publication
 
 **Files:**
+
 - Create: `backend/src/Bolao.Functions/Persistence/DynamoDbOptions.cs`
 - Create: `backend/src/Bolao.Functions/Persistence/DynamoMatchRepository.cs`
 - Create: `backend/src/Bolao.Functions/Persistence/DynamoPredictionRepository.cs`
@@ -399,6 +404,7 @@ Expected: PASS for upsert uniqueness and repeated publication.
 ## Task 6: Build the public and participant HTTP API
 
 **Files:**
+
 - Modify: `backend/src/Bolao.Functions/Program.cs`
 - Create: `backend/src/Bolao.Functions/Api/Contracts.cs`
 - Create: `backend/src/Bolao.Functions/Api/PublicEndpoints.cs`
@@ -441,6 +447,7 @@ Expected: PASS; logs captured by tests contain no email, name, token or request 
 ## Task 7: Provision AWS foundations with Terraform
 
 **Files:**
+
 - Create: `infra/backend.tf`
 - Create: `infra/providers.tf`
 - Create: `infra/variables.tf`
@@ -525,6 +532,7 @@ Expected: formatting is clean and the development root module validates without 
 ## Task 8: Implement Cognito OTP and private profile frontend
 
 **Files:**
+
 - Create: `frontend/src/auth/cognito.ts`
 - Create: `frontend/src/auth/AuthProvider.tsx`
 - Create: `frontend/src/auth/SignInPage.tsx`
@@ -592,6 +600,7 @@ Expected: PASS.
 ## Task 9: Implement current match, cutoff and searchable player fields
 
 **Files:**
+
 - Create: `frontend/src/features/match/CurrentMatchPage.tsx`
 - Create: `frontend/src/features/match/PredictionForm.tsx`
 - Create: `frontend/src/features/match/useCutoff.ts`
@@ -651,6 +660,7 @@ Expected: PASS.
 ## Task 10: Add leaderboard, winner, visibility and history
 
 **Files:**
+
 - Create: `frontend/src/features/leaderboard/Leaderboard.tsx`
 - Create: `frontend/src/features/leaderboard/RoundWinner.tsx`
 - Create: `frontend/src/features/leaderboard/MatchHistory.tsx`
@@ -699,6 +709,7 @@ Expected: PASS.
 ## Task 11: Implement API-Football client and daily quota guard
 
 **Files:**
+
 - Create: `backend/src/Bolao.Functions/FootballApi/IFootballApiClient.cs`
 - Create: `backend/src/Bolao.Functions/FootballApi/FootballApiClient.cs`
 - Create: `backend/src/Bolao.Functions/FootballApi/FootballApiModels.cs`
@@ -742,6 +753,7 @@ Expected: PASS.
 ## Task 12: Schedule polling and create provisional results
 
 **Files:**
+
 - Create: `backend/src/Bolao.Functions/Jobs/DailyMatchSyncHandler.cs`
 - Create: `backend/src/Bolao.Functions/Jobs/MatchPollingHandler.cs`
 - Create: `backend/src/Bolao.Functions/Jobs/MatchScheduleService.cs`
@@ -789,6 +801,7 @@ Expected: PASS.
 ## Task 13: Implement administration and confirmed publication
 
 **Files:**
+
 - Create: `backend/src/Bolao.Functions/Api/AdminEndpoints.cs`
 - Create: `backend/src/Bolao.Functions/Admin/ResultConfirmationService.cs`
 - Create: `backend/src/Bolao.Functions/Notifications/IWinnerNotificationService.cs`
@@ -839,6 +852,7 @@ Expected: PASS.
 ## Task 14: Add rules, privacy copy and retention operation
 
 **Files:**
+
 - Create: `frontend/src/features/legal/RulesPage.tsx`
 - Create: `frontend/src/features/legal/PrivacyPage.tsx`
 - Create: `backend/src/Bolao.Functions/Jobs/DataRetentionHandler.cs`
@@ -867,6 +881,7 @@ Expected: PASS.
 ## Task 15: Add GitHub Actions deployments and complete operational handoff
 
 **Files:**
+
 - Create: `.github/workflows/infra.yml`
 - Create: `.github/workflows/backend.yml`
 - Create: `.github/workflows/frontend.yml`

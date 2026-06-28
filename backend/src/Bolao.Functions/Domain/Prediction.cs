@@ -1,6 +1,6 @@
 namespace Bolao.Functions.Domain;
 
-public sealed record PredictionAnswers(
+public record PredictionAnswers(
     int HomeGoals,
     int AwayGoals,
     string FirstScorerKey,

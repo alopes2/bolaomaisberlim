@@ -1,6 +1,6 @@
 namespace Bolao.Functions.Domain;
 
-public sealed record ConfirmedResult(
+public record ConfirmedResult(
     int HomeGoals,
     int AwayGoals,
     string? FirstScorerKey,
@@ -11,7 +11,7 @@ public sealed record ConfirmedResult(
     int HomeRedCards,
     int AwayRedCards);
 
-public sealed record ScoreBreakdown(
+public record ScoreBreakdown(
     int Result,
     int FirstScorer,
     int HomeTopScorer,

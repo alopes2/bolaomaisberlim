@@ -3,7 +3,7 @@ using FluentAssertions;
 
 namespace Bolao.Functions.Tests.Rosters;
 
-public sealed class JsonRosterCatalogTests
+public class JsonRosterCatalogTests
 {
     [Fact]
     public async Task LoadsBrazilAndBuildsStablePlayerKeys()

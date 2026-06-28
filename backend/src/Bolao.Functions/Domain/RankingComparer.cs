@@ -1,13 +1,13 @@
 namespace Bolao.Functions.Domain;
 
-public sealed record RankingEntry(
+public record RankingEntry(
     string ParticipantId,
     int TotalPoints,
     int ExactScoreCount,
     int FirstScorerCount,
     DateTimeOffset FinalSubmissionAt);
 
-public sealed class RankingComparer : IComparer<RankingEntry>
+public class RankingComparer : IComparer<RankingEntry>
 {
     public static RankingComparer Instance { get; } = new();
 
