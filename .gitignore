@@ -1,0 +1,22 @@
+# .NET
+**/bin/
+**/obj/
+
+# Node
+**/node_modules/
+**/dist/
+
+# Local configuration and generated reports
+.aws-sam/
+.env*
+!.env.example
+test-results/
+playwright-report/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+terraform.tfvars
+
