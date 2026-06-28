@@ -169,6 +169,13 @@ public class PredictionServiceTests
             entries[(matchId, participantId)] = new SavedPrediction(answers, submittedAt);
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyList<StoredPrediction>> ListByMatchAsync(
+            string matchId,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<StoredPrediction>>([]);
+        }
     }
 
     private class SingleMatchRepository(Match match) : IMatchRepository

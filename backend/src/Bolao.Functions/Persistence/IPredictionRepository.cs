@@ -10,4 +10,8 @@ public interface IPredictionRepository
         PredictionAnswers answers,
         DateTimeOffset submittedAt,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<StoredPrediction>> ListByMatchAsync(
+        string matchId,
+        CancellationToken cancellationToken);
 }
