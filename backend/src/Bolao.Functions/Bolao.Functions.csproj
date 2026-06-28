@@ -12,4 +12,8 @@
     <PackageReference Include="AWSSDK.Scheduler" Version="4.0.3.10" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="../../../assets/teams.json" Link="assets/teams.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
