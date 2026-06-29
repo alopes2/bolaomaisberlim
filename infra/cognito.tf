@@ -72,3 +72,9 @@ resource "aws_cognito_user_group" "admins" {
   user_pool_id = aws_cognito_user_pool.main.id
   description  = "MaisBerlim bolao administrators"
 }
+
+resource "aws_cognito_user" "admins" {
+  for_each     = toset(var.admin_emails)
+  username     = each.value
+  user_pool_id = aws_cognito_user_pool.main.id
+}
