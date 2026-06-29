@@ -1,0 +1,15 @@
+{
+  "terraform.indexing": {
+    "rootModulePaths": ["infra", "terraform"],
+    "ignoreDirectoryNames": [
+      "node_modules",
+      "bin",
+      "obj",
+      "dist",
+      ".git",
+      ".next",
+      ".turbo",
+      ".vite"
+    ]
+  }
+}

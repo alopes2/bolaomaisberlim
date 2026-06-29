@@ -66,15 +66,3 @@ resource "aws_cognito_user_pool_client" "web" {
   supported_identity_providers         = [aws_cognito_identity_provider.google.provider_name]
   prevent_user_existence_errors        = "ENABLED"
 }
-
-resource "aws_cognito_user_group" "admins" {
-  name         = "admins"
-  user_pool_id = aws_cognito_user_pool.main.id
-  description  = "MaisBerlim bolao administrators"
-}
-
-resource "aws_cognito_user" "admins" {
-  for_each     = toset(var.admin_emails)
-  username     = each.value
-  user_pool_id = aws_cognito_user_pool.main.id
-}
