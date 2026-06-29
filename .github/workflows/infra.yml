@@ -70,6 +70,6 @@ jobs:
       - run: terraform -chdir=infra init -input=false
       - run: terraform -chdir=infra validate
       - name: Recreate reviewed plan
-        run: terraform -chdir=infra plan -input=false -out=tfplan > /dev/null
+        run: terraform -chdir=infra plan -input=false -out=tfplan
       - name: Apply through protected environment
-        run: terraform -chdir=infra apply -input=false -auto-approve tfplan > /dev/null
+        run: terraform -chdir=infra apply -input=false -auto-approve tfplan

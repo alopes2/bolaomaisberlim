@@ -6,7 +6,7 @@ resource "aws_cognito_user_pool" "main" {
   mfa_configuration        = "OFF"
 
   sign_in_policy {
-    allowed_first_auth_factors = ["EMAIL_OTP"]
+    allowed_first_auth_factors = ["EMAIL_OTP", "PASSWORD"]
   }
 
   username_configuration {
