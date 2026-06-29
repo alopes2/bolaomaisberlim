@@ -1,0 +1,10 @@
+github_repository = "owner/maisberlim-bolao-copa"
+github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+
+# Supply this through the TF_VAR_api_football_key environment variable.
+# Do not store the real key in this file.
+# api_football_key = "replace-via-github-secret"
+
+# Enable after SES production access and domain verification:
+# ses_identity_arn = "arn:aws:ses:eu-central-1:123456789012:identity/maisberlim.com"
+# ses_from_email   = "MaisBerlim <bolao@maisberlim.com>"

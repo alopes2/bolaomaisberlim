@@ -19,6 +19,7 @@
 ### Root
 
 - `assets/teams.json`: fonte canônica dos elencos.
+- `docs/domain-and-flow.md`: glossário curto dos termos e fluxos principais, mantido junto com a implementação.
 - `README.md`: pré-requisitos, comandos locais, implantação e operação.
 - `.gitignore`: saídas de .NET, Node, Terraform e arquivos locais de ambiente.
 
@@ -42,7 +43,7 @@
 
 - `infra/backend.tf`: backend S3 remoto fornecido pelo proprietário.
 - `infra/providers.tf`: versões do Terraform e providers AWS/archive.
-- `infra/variables.tf`: entradas não secretas do ambiente.
+- `infra/variables.tf`: entradas do ambiente; valores sensíveis são fornecidos externamente e não versionados.
 - `infra/outputs.tf`: nomes e IDs consumidos na configuração dos workflows.
 - `infra/dynamodb.tf`, `infra/cognito.tf`, `infra/lambda.tf`, `infra/api-gateway.tf`, `infra/scheduler.tf`, `infra/frontend.tf`, `infra/github-oidc.tf`: recursos AWS agrupados por responsabilidade no root module.
 - `infra/lambda-bootstrap/placeholder.txt`: pacote inicial mínimo, substituído pelo primeiro deploy do backend.
@@ -410,6 +411,7 @@ Expected: PASS for upsert uniqueness and repeated publication.
 - Create: `backend/src/Bolao.Functions/Api/PublicEndpoints.cs`
 - Create: `backend/src/Bolao.Functions/Api/ParticipantEndpoints.cs`
 - Create: `backend/src/Bolao.Functions/Auth/CurrentUser.cs`
+- Create: `docs/domain-and-flow.md`
 - Test: `backend/tests/Bolao.Functions.Tests/Api/ParticipantEndpointTests.cs`
 
 - [ ] **Step 1: Write failing endpoint tests**
@@ -438,7 +440,11 @@ Expected: FAIL with 404 responses.
 
 Return RFC 7807 problem details with stable codes: `unauthenticated`, `profile_required`, `prediction_closed`, `invalid_player`, `match_not_found`. Read `sub` and `cognito:groups` only from validated claims; never accept participant ID from request bodies.
 
-- [ ] **Step 4: Verify API behavior**
+- [ ] **Step 4: Document terms and main flows**
+
+Create `docs/domain-and-flow.md` with a concise glossary for `Participant`, `Match`, `Prediction`, `MatchResult`, `ScoreBreakdown`, `Standing` and `ResultVersion`. Document the participant submission flow and provisional-to-confirmed publication flow without duplicating implementation details.
+
+- [ ] **Step 5: Verify API behavior**
 
 Run: `dotnet test backend/Bolao.slnx`
 
@@ -481,7 +487,7 @@ terraform {
 
 - [ ] **Step 2: Define parameters, Lambdas and encrypted DynamoDB tables**
 
-Use `aws_lambda_function` with runtime `dotnet10`, API Gateway payload v2, DynamoDB `PAY_PER_REQUEST`, point-in-time recovery and server-side encryption. Expose table names and `FOOTBALL_API_SECRET_ARN` as environment variables; resolve the API key from Secrets Manager at runtime. Create functions initially from an `archive_file` containing `infra/lambda-bootstrap/placeholder.txt`; the first backend workflow replaces it. Terraform owns Lambda configuration and uses `lifecycle.ignore_changes` only for `filename` and `source_code_hash`, which are owned by that workflow.
+Use `aws_lambda_function` with runtime `dotnet10`, API Gateway payload v2, DynamoDB `PAY_PER_REQUEST`, point-in-time recovery and server-side encryption. Accept the API-Football key through the sensitive Terraform variable `api_football_key` and expose it as `FOOTBALL_API_KEY` only to the API, daily-sync and match-polling Lambdas. The GitHub Actions workflow supplies it through the `TF_VAR_api_football_key` environment variable backed by a GitHub secret. Create functions initially from an `archive_file` containing `infra/lambda-bootstrap/placeholder.txt`; the first backend workflow replaces it. Terraform owns Lambda configuration and uses `lifecycle.ignore_changes` only for `filename` and `source_code_hash`, which are owned by that workflow.
 
 - [ ] **Step 3: Configure Cognito passwordless email OTP**
 
@@ -511,7 +517,7 @@ Create the `admins` group. Keep Cognito's default email sender in dev; parameter
 
 - [ ] **Step 4: Configure API authorization, GitHub OIDC and least privilege**
 
-Public routes require no authorizer; participant and admin routes use the Cognito JWT authorizer. Lambda IAM policies name exact tables, scheduler group, secret ARN and identidade SES autorizada para a notificação do vencedor. `infra/github-oidc.tf` creates the GitHub OIDC provider and separate infrastructure, backend and frontend roles. Restrict trust policies to this repository and the protected branch/environment. Do not grant `dynamodb:*`, `lambda:*`, `secretsmanager:*`, `ses:*` or `AdministratorAccess`. The first apply uses local AWS credentials because the CI roles do not exist yet.
+Public routes require no authorizer; participant and admin routes use the Cognito JWT authorizer. Lambda IAM policies name exact tables, scheduler group and identidade SES autorizada para a notificação do vencedor. `infra/github-oidc.tf` references the existing GitHub OIDC provider ARN and creates separate infrastructure, backend and frontend roles. Restrict trust policies to this repository and the protected branch/environment. Do not grant `dynamodb:*`, `lambda:*`, `ses:*` or `AdministratorAccess`. The first apply uses local AWS credentials because the CI roles do not exist yet.
 
 - [ ] **Step 5: Add S3 and CloudFront resources**
 
@@ -742,7 +748,7 @@ Use DynamoDB `ADD RequestCount :one` with condition `attribute_not_exists(Reques
 
 - [ ] **Step 4: Implement the HTTP client**
 
-Read the key from Secrets Manager once per warm Lambda instance, send it only in the required API-Football header, use a 10-second timeout and reserve quota before each request. Never log headers or response bodies containing unexpected personal data.
+Read the key from the `FOOTBALL_API_KEY` environment variable, send it only in the required API-Football header, use a 10-second timeout and reserve quota before each request. Never log the key, headers or response bodies containing unexpected personal data.
 
 - [ ] **Step 5: Run backend tests**
 
@@ -938,7 +944,7 @@ terraform -chdir=infra validate
 terraform -chdir=infra plan
 ```
 
-Also document the existing state bucket, one-time local apply for OIDC roles, protected GitHub environments, required repository/environment variables, adding an admin to the Cognito group, storing the API key in Secrets Manager, checking `ApiUsage`, manual result fallback, SES/domain migration and workflow rollback procedures.
+Also document the existing state bucket, one-time local apply for OIDC roles, protected GitHub environments, required repository/environment variables, adding an admin to the Cognito group, supplying `TF_VAR_api_football_key` from a protected GitHub secret, checking `ApiUsage`, manual result fallback, SES/domain migration and workflow rollback procedures.
 
 - [ ] **Step 8: Run the complete verification suite**
 
