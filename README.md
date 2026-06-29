@@ -70,17 +70,23 @@ Crie o ambiente protegido `production`, com aprovação obrigatória para deploy
 | `VITE_API_BASE_URL` | output `api_url` |
 | `VITE_COGNITO_USER_POOL_ID` | output `cognito_user_pool_id` |
 | `VITE_COGNITO_CLIENT_ID` | output `cognito_user_pool_client_id` |
+| `VITE_COGNITO_DOMAIN` | output `cognito_domain` |
+| `COGNITO_DOMAIN_PREFIX` | prefixo globalmente único, por exemplo `bolaomaisberlim-prod` |
+| `COGNITO_CALLBACK_URLS` | array JSON com URLs de retorno, incluindo `/` final |
+| `COGNITO_LOGOUT_URLS` | array JSON com URLs pós-logout, incluindo `/` final |
+| `GOOGLE_CLIENT_ID` | client ID OAuth Web do Google |
+| `ADMIN_EMAILS` | array JSON de e-mails Google administradores |
 | `FRONTEND_BUCKET_NAME` | output `frontend_bucket_name` |
 | `CLOUDFRONT_DISTRIBUTION_ID` | output `cloudfront_distribution_id` |
-| `SES_IDENTITY_ARN` | opcional; identidade SES verificada |
-| `SES_FROM_EMAIL` | opcional; remetente correspondente |
+| `SES_IDENTITY_ARN` | opcional; identidade SES para notificar o vencedor |
+| `SES_FROM_EMAIL` | opcional; remetente da notificação do vencedor |
 
 Configure os GitHub Secrets protegidos:
 
 - `API_FOOTBALL_KEY`: o workflow de infraestrutura o expõe apenas ao Terraform como `TF_VAR_api_football_key`;
-- `ADMIN_EMAILS`: array JSON com os e-mails administradores, por exemplo `["admin1@example.com", "admin2@example.com"]`, exposto como `TF_VAR_admin_emails`.
+- `GOOGLE_CLIENT_SECRET`: segredo do client OAuth Web, exposto apenas como `TF_VAR_google_client_secret`.
 
-O plan é armazenado como artifact privado e não é publicado em comentários ou logs. O Terraform gerencia esses usuários: remover um e-mail da lista remove o usuário correspondente do Cognito. Embora `ADMIN_EMAILS` seja um secret do GitHub, os e-mails aparecem nos endereços dos recursos, no plan e no state do Terraform.
+O plan é armazenado como artifact privado e não é publicado em comentários ou logs. O segredo OAuth fica no state porque faz parte da configuração do provedor Google no Cognito; mantenha o backend do Terraform restrito. `ADMIN_EMAILS` não é secreto e controla claims, não usuários Cognito persistentes.
 
 As trust policies das roles externas devem restringir `sub` ao repositório/branch ou ao ambiente `production`. As permissões mínimas são:
 
@@ -90,14 +96,19 @@ As trust policies das roles externas devem restringir `sub` ao repositório/bran
 
 ## Administração
 
-Adicione um usuário verificado ao grupo:
+O Terraform normaliza `ADMIN_EMAILS`. No login, uma Lambda pré-token adiciona o grupo `admins` somente quando o Google informa o e-mail como verificado e ele está na lista. Remover um endereço da variável remove o acesso administrativo no próximo token emitido.
 
-```bash
-aws cognito-idp admin-add-user-to-group \
-  --user-pool-id USER_POOL_ID \
-  --username USERNAME \
-  --group-name admins
-```
+## Login com Google
+
+No Google Cloud Console:
+
+1. crie ou selecione um projeto e configure a tela de consentimento OAuth externa;
+2. crie credenciais OAuth 2.0 do tipo **Aplicativo da Web**;
+3. adicione `https://COGNITO_DOMAIN_PREFIX.auth.eu-central-1.amazoncognito.com/oauth2/idpresponse` aos URIs de redirecionamento autorizados;
+4. configure `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no ambiente `production` do GitHub;
+5. depois do apply, copie os outputs Cognito para as variáveis `VITE_COGNITO_*` e execute o workflow Frontend.
+
+Use somente os escopos `openid`, `email` e `profile`. Login local, senha e código por e-mail não são expostos pelo app client.
 
 A área de apuração usa `/admin?matchId=MATCH_ID`. O cadastro/ajuste de jogo também está disponível pela API administrativa e recebe `id`, `providerFixtureId`, `kickoff`, códigos FIFA e, após a entrega, `prizeHandedOverAt`.
 
@@ -113,14 +124,14 @@ O admin revisa o resultado bruto, resolve jogadores, corrige valores, consulta o
 
 ## SES e domínio
 
-Enquanto `ses_identity_arn`/`ses_from_email` não forem configurados, Cognito usa seu remetente padrão e a notificação customizada do vencedor fica desabilitada; ranking e confirmação continuam funcionando.
+O Cognito usa a configuração padrão e o login Google não envia e-mail. Enquanto `ses_identity_arn`/`ses_from_email` não forem configurados, somente a notificação customizada do vencedor fica desabilitada; ranking e confirmação continuam funcionando.
 
 Para produção pública:
 
 1. obtenha acesso de produção no SES;
 2. verifique domínio/remetente, mesmo com DNS fora do Route 53;
 3. forneça `ses_identity_arn` e `ses_from_email` ao Terraform;
-4. aplique a mudança e teste com destinatários Cognito controlados;
+4. aplique a mudança e teste com destinatários controlados;
 5. confirme SPF/DKIM e monitore bounces.
 
 Falhas normais do SES liberam o claim para retry manual e permanecem visíveis ao admin. Um crash entre o claim e o envio não permite garantia estrita de exactly-once do provedor.
@@ -136,6 +147,6 @@ Falhas normais do SES liberam o claim para retry manual e permanecem visíveis a
 
 - informar as três roles OIDC externas e suas trust policies;
 - fornecer `API_FOOTBALL_KEY`;
+- criar as credenciais OAuth Web do Google e fornecer o client ID/secret;
 - executar/revisar o primeiro plan/apply;
-- criar usuários destinatários de teste no Cognito e um admin;
 - obter SES production access e os registros DNS antes de ativar e-mail próprio.

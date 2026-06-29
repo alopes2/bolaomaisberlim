@@ -4,6 +4,12 @@ data "archive_file" "lambda_bootstrap" {
   output_path = "${path.module}/.terraform/lambda-bootstrap.zip"
 }
 
+data "archive_file" "admin_claims" {
+  type        = "zip"
+  source_file = "${path.module}/lambda-admin-claims/index.mjs"
+  output_path = "${path.module}/.terraform/admin-claims.zip"
+}
+
 locals {
   lambda_functions = {
     api = {
@@ -189,4 +195,62 @@ resource "aws_lambda_function" "this" {
   lifecycle {
     ignore_changes = [filename, source_code_hash]
   }
+}
+
+resource "aws_iam_role" "admin_claims" {
+  name = "${local.name_prefix}-admin-claims-lambda-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "admin_claims_logs" {
+  name = "${local.name_prefix}-admin-claims-lambda-logs"
+  role = aws_iam_role.admin_claims.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ]
+      Resource = "arn:${data.aws_partition.current.partition}:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
+    }]
+  })
+}
+
+resource "aws_lambda_function" "admin_claims" {
+  function_name    = "${local.name_prefix}-admin-claims"
+  role             = aws_iam_role.admin_claims.arn
+  runtime          = "nodejs22.x"
+  handler          = "index.handler"
+  filename         = data.archive_file.admin_claims.output_path
+  source_code_hash = data.archive_file.admin_claims.output_base64sha256
+  timeout          = 5
+  memory_size      = 128
+
+  environment {
+    variables = {
+      ADMIN_EMAILS = jsonencode(sort([
+        for email in var.admin_emails : lower(trimspace(email))
+      ]))
+    }
+  }
+}
+
+resource "aws_lambda_permission" "cognito_admin_claims" {
+  statement_id  = "AllowCognitoAdminClaims"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.admin_claims.function_name
+  principal     = "cognito-idp.amazonaws.com"
+  source_arn    = aws_cognito_user_pool.main.arn
 }

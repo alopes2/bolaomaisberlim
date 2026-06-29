@@ -6,26 +6,35 @@ import { describe, expect, it, vi } from 'vitest'
 import { SignInPage } from './SignInPage'
 
 describe('SignInPage', () => {
-  it('requests an email code and confirms it', async () => {
+  it('starts Google sign-in', async () => {
+    const user = userEvent.setup()
+    const onAuthenticated = vi.fn()
+    const auth = {
+      signIn: vi.fn().mockResolvedValue(undefined),
+      signOut: vi.fn().mockResolvedValue(undefined),
+      accessToken: vi.fn().mockResolvedValue(null),
+    }
+
+    render(<SignInPage auth={auth} onAuthenticated={onAuthenticated} />)
+
+    await user.click(screen.getByRole('button', { name: /entrar com google/i }))
+
+    expect(auth.signIn).toHaveBeenCalledOnce()
+    expect(onAuthenticated).toHaveBeenCalledOnce()
+  })
+
+  it('shows a Google sign-in failure', async () => {
     const user = userEvent.setup()
     const auth = {
-      start: vi.fn().mockResolvedValue(undefined),
-      confirm: vi.fn().mockResolvedValue(undefined),
+      signIn: vi.fn().mockRejectedValue(new Error('Google indisponível.')),
       signOut: vi.fn().mockResolvedValue(undefined),
       accessToken: vi.fn().mockResolvedValue(null),
     }
 
     render(<SignInPage auth={auth} onAuthenticated={vi.fn()} />)
 
-    await user.type(screen.getByLabelText(/e-mail/i), 'ana@example.com')
-    await user.click(screen.getByRole('button', { name: /enviar código/i }))
+    await user.click(screen.getByRole('button', { name: /entrar com google/i }))
 
-    expect(auth.start).toHaveBeenCalledWith('ana@example.com')
-
-    const code = await screen.findByLabelText(/código/i)
-    await user.type(code, '123456')
-    await user.click(screen.getByRole('button', { name: /confirmar/i }))
-
-    expect(auth.confirm).toHaveBeenCalledWith('123456')
+    expect(await screen.findByText('Google indisponível.')).toBeVisible()
   })
 })

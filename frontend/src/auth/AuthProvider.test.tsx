@@ -12,8 +12,7 @@ function AuthStatus() {
 describe('AuthProvider', () => {
   it('restores an authenticated session from the access token', async () => {
     const auth = {
-      start: vi.fn(),
-      confirm: vi.fn(),
+      signIn: vi.fn(),
       signOut: vi.fn(),
       accessToken: vi.fn().mockResolvedValue('token'),
     }

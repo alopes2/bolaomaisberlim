@@ -29,6 +29,11 @@ jobs:
       TF_IN_AUTOMATION: 'true'
       TF_VAR_api_football_key: ${{ secrets.API_FOOTBALL_KEY }}
       TF_VAR_admin_emails: ${{ vars.ADMIN_EMAILS }}
+      TF_VAR_cognito_domain_prefix: ${{ vars.COGNITO_DOMAIN_PREFIX }}
+      TF_VAR_cognito_callback_urls: ${{ vars.COGNITO_CALLBACK_URLS }}
+      TF_VAR_cognito_logout_urls: ${{ vars.COGNITO_LOGOUT_URLS }}
+      TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
+      TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       TF_VAR_ses_identity_arn: ${{ vars.SES_IDENTITY_ARN }}
       TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
     steps:
@@ -59,6 +64,11 @@ jobs:
       TF_IN_AUTOMATION: 'true'
       TF_VAR_api_football_key: ${{ secrets.API_FOOTBALL_KEY }}
       TF_VAR_admin_emails: ${{ vars.ADMIN_EMAILS }}
+      TF_VAR_cognito_domain_prefix: ${{ vars.COGNITO_DOMAIN_PREFIX }}
+      TF_VAR_cognito_callback_urls: ${{ vars.COGNITO_CALLBACK_URLS }}
+      TF_VAR_cognito_logout_urls: ${{ vars.COGNITO_LOGOUT_URLS }}
+      TF_VAR_google_client_id: ${{ vars.GOOGLE_CLIENT_ID }}
+      TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       TF_VAR_ses_identity_arn: ${{ vars.SES_IDENTITY_ARN }}
       TF_VAR_ses_from_email: ${{ vars.SES_FROM_EMAIL }}
     steps:

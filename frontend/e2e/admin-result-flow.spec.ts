@@ -16,10 +16,7 @@ test('admin resolves, confirms and publishes the winner without duplicate points
   })
 
   await page.goto('/')
-  await page.getByLabel('E-mail').fill('admin@example.com')
-  await page.getByRole('button', { name: 'Enviar código' }).click()
-  await page.getByLabel('Código').fill('123456')
-  await page.getByRole('button', { name: 'Confirmar código' }).click()
+  await page.evaluate(() => localStorage.setItem('bolao-e2e-token', 'e2e-admin'))
   await page.goto('/admin?matchId=match-e2e')
   await expect(page.getByText('Ranking provisório')).toBeVisible()
   await page.getByRole('combobox', { name: /associar raphinha api/i }).click()

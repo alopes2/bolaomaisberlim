@@ -23,18 +23,54 @@ variable "api_football_key" {
 }
 
 variable "admin_emails" {
-  description = "Email addresses for Terraform-managed Cognito administrators."
+  description = "Verified Google email addresses that receive Cognito administrator claims."
   type        = set(string)
 }
 
+variable "cognito_domain_prefix" {
+  description = "Globally unique Cognito managed-login domain prefix."
+  type        = string
+}
+
+variable "cognito_callback_urls" {
+  description = "Allowed OAuth callback URLs for the Cognito web client."
+  type        = set(string)
+
+  validation {
+    condition     = length(var.cognito_callback_urls) > 0
+    error_message = "cognito_callback_urls must contain at least one URL."
+  }
+}
+
+variable "cognito_logout_urls" {
+  description = "Allowed post-logout URLs for the Cognito web client."
+  type        = set(string)
+
+  validation {
+    condition     = length(var.cognito_logout_urls) > 0
+    error_message = "cognito_logout_urls must contain at least one URL."
+  }
+}
+
+variable "google_client_id" {
+  description = "Google OAuth web client ID used by Cognito."
+  type        = string
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth web client secret used by Cognito."
+  type        = string
+  sensitive   = true
+}
+
 variable "ses_identity_arn" {
-  description = "Verified SES identity ARN for production Cognito email; null uses Cognito default email."
+  description = "Verified SES identity ARN for winner notifications; null disables notification email."
   type        = string
   default     = null
 }
 
 variable "ses_from_email" {
-  description = "From address used with ses_identity_arn."
+  description = "Winner-notification From address used with ses_identity_arn."
   type        = string
   default     = null
 

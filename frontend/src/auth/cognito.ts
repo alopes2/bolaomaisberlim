@@ -1,14 +1,12 @@
 import { Amplify } from 'aws-amplify'
 import {
-  confirmSignIn,
   fetchAuthSession,
-  signIn,
+  signInWithRedirect,
   signOut,
 } from 'aws-amplify/auth'
 
 export interface AuthClient {
-  start(email: string): Promise<void>
-  confirm(code: string): Promise<void>
+  signIn(): Promise<void>
   signOut(): Promise<void>
   accessToken(): Promise<string | null>
 }
@@ -17,34 +15,35 @@ export function configureCognitoAuth() {
   if (import.meta.env.VITE_E2E === 'true') return
   const userPoolId = import.meta.env.VITE_COGNITO_USER_POOL_ID
   const userPoolClientId = import.meta.env.VITE_COGNITO_CLIENT_ID
+  const domain = import.meta.env.VITE_COGNITO_DOMAIN
 
-  if (!userPoolId || !userPoolClientId) {
+  if (!userPoolId || !userPoolClientId || !domain) {
     throw new Error('Configuração do Cognito ausente.')
   }
 
+  const redirectUrl = `${window.location.origin}/`
   Amplify.configure({
     Auth: {
       Cognito: {
         userPoolId,
         userPoolClientId,
-        loginWith: { email: true },
+        loginWith: {
+          oauth: {
+            domain,
+            scopes: ['openid', 'email', 'profile'],
+            redirectSignIn: [redirectUrl],
+            redirectSignOut: [redirectUrl],
+            responseType: 'code',
+          },
+        },
       },
     },
   })
 }
 
 class E2EAuthClient implements AuthClient {
-  private pendingEmail = ''
-
-  async start(email: string) {
-    this.pendingEmail = email
-  }
-
-  async confirm() {
-    localStorage.setItem(
-      'bolao-e2e-token',
-      this.pendingEmail.startsWith('admin@') ? 'e2e-admin' : 'e2e-user',
-    )
+  async signIn() {
+    localStorage.setItem('bolao-e2e-token', 'e2e-user')
   }
 
   async signOut() {
@@ -56,26 +55,9 @@ class E2EAuthClient implements AuthClient {
   }
 }
 
-class CognitoAuthClient implements AuthClient {
-  async start(email: string) {
-    const result = await signIn({
-      username: email,
-      options: {
-        authFlowType: 'USER_AUTH',
-        preferredChallenge: 'EMAIL_OTP',
-      },
-    })
-
-    if (result.nextStep.signInStep !== 'CONFIRM_SIGN_IN_WITH_EMAIL_CODE') {
-      throw new Error('O Cognito não iniciou o desafio por e-mail.')
-    }
-  }
-
-  async confirm(code: string) {
-    const result = await confirmSignIn({ challengeResponse: code })
-    if (result.nextStep.signInStep !== 'DONE') {
-      throw new Error('O Cognito não concluiu a autenticação.')
-    }
+export class CognitoAuthClient implements AuthClient {
+  signIn() {
+    return signInWithRedirect({ provider: 'Google' })
   }
 
   signOut() {
@@ -87,7 +69,10 @@ class CognitoAuthClient implements AuthClient {
       const session = await fetchAuthSession()
       return session.tokens?.accessToken?.toString() ?? null
     } catch (error) {
-      if (error instanceof Error && error.name === 'UserUnAuthenticatedException') {
+      if (
+        error instanceof Error &&
+        error.name === 'UserUnAuthenticatedException'
+      ) {
         return null
       }
       throw error

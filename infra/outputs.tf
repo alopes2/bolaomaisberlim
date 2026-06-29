@@ -10,6 +10,14 @@ output "cognito_user_pool_client_id" {
   value = aws_cognito_user_pool_client.web.id
 }
 
+output "cognito_domain" {
+  value = "${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com"
+}
+
+output "google_oauth_redirect_uri" {
+  value = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.aws_region}.amazoncognito.com/oauth2/idpresponse"
+}
+
 output "frontend_bucket_name" {
   value = aws_s3_bucket.frontend.id
 }

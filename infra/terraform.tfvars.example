@@ -5,6 +5,13 @@
 # Supply real administrator emails through TF_VAR_admin_emails as a JSON array.
 # admin_emails = ["admin1@example.com", "admin2@example.com"]
 
-# Enable after SES production access and domain verification:
+# Supply OAuth settings through their corresponding TF_VAR values.
+# cognito_domain_prefix = "bolaomaisberlim-prod"
+# cognito_callback_urls = ["https://example.cloudfront.net/", "http://localhost:5173/"]
+# cognito_logout_urls   = ["https://example.cloudfront.net/", "http://localhost:5173/"]
+# google_client_id      = "replace-via-github-variable"
+# google_client_secret  = "replace-via-github-secret"
+
+# Enable winner notifications after SES production access and identity verification:
 # ses_identity_arn = "arn:aws:ses:eu-central-1:123456789012:identity/maisberlim.com"
 # ses_from_email   = "MaisBerlim <bolao@maisberlim.com>"

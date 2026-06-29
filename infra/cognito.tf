@@ -9,15 +9,43 @@ resource "aws_cognito_user_pool" "main" {
     allowed_first_auth_factors = ["EMAIL_OTP", "PASSWORD"]
   }
 
+  lambda_config {
+    pre_token_generation_config {
+      lambda_arn     = aws_lambda_function.admin_claims.arn
+      lambda_version = "V1_0"
+    }
+  }
+
   username_configuration {
     case_sensitive = false
   }
 
   email_configuration {
-    email_sending_account  = local.ses_identity_arn == null ? "COGNITO_DEFAULT" : "DEVELOPER"
-    source_arn             = local.ses_identity_arn
-    from_email_address     = local.ses_from_email
-    reply_to_email_address = local.ses_from_email
+    email_sending_account = "COGNITO_DEFAULT"
+  }
+}
+
+resource "aws_cognito_user_pool_domain" "main" {
+  domain       = var.cognito_domain_prefix
+  user_pool_id = aws_cognito_user_pool.main.id
+}
+
+resource "aws_cognito_identity_provider" "google" {
+  user_pool_id  = aws_cognito_user_pool.main.id
+  provider_name = "Google"
+  provider_type = "Google"
+
+  provider_details = {
+    authorize_scopes = "openid email profile"
+    client_id        = var.google_client_id
+    client_secret    = var.google_client_secret
+  }
+
+  attribute_mapping = {
+    email          = "email"
+    email_verified = "email_verified"
+    given_name     = "given_name"
+    family_name    = "family_name"
   }
 }
 
@@ -27,36 +55,20 @@ resource "aws_cognito_user_pool_client" "web" {
 
   generate_secret = false
   explicit_auth_flows = [
-    "ALLOW_USER_AUTH",
     "ALLOW_REFRESH_TOKEN_AUTH"
   ]
-  prevent_user_existence_errors = "ENABLED"
+
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_scopes                 = ["openid", "email", "profile"]
+  callback_urls                        = sort(tolist(var.cognito_callback_urls))
+  logout_urls                          = sort(tolist(var.cognito_logout_urls))
+  supported_identity_providers         = [aws_cognito_identity_provider.google.provider_name]
+  prevent_user_existence_errors        = "ENABLED"
 }
 
 resource "aws_cognito_user_group" "admins" {
   name         = "admins"
   user_pool_id = aws_cognito_user_pool.main.id
   description  = "MaisBerlim bolao administrators"
-}
-
-resource "aws_cognito_user" "admins" {
-  for_each = var.admin_emails
-
-  user_pool_id = aws_cognito_user_pool.main.id
-  username     = each.value
-
-  attributes = {
-    email          = each.value
-    email_verified = "true"
-  }
-
-  message_action = "SUPPRESS"
-}
-
-resource "aws_cognito_user_in_group" "admins" {
-  for_each = var.admin_emails
-
-  user_pool_id = aws_cognito_user_pool.main.id
-  group_name   = aws_cognito_user_group.admins.name
-  username     = aws_cognito_user.admins[each.key].username
 }

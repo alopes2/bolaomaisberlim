@@ -5,8 +5,7 @@ import { ApiClient } from './client'
 describe('ApiClient', () => {
   it('reads the server submission timestamp after saving a prediction', async () => {
     const auth = {
-      start: vi.fn(),
-      confirm: vi.fn(),
+      signIn: vi.fn(),
       signOut: vi.fn(),
       accessToken: vi.fn().mockResolvedValue('token'),
     }

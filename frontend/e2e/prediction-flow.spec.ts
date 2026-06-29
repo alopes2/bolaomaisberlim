@@ -1,11 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 
-async function signIn(page: Page, email = 'ana@example.com') {
+async function signIn(page: Page) {
   await page.goto('/')
-  await page.getByLabel('E-mail').fill(email)
-  await page.getByRole('button', { name: 'Enviar código' }).click()
-  await page.getByLabel('Código').fill('123456')
-  await page.getByRole('button', { name: 'Confirmar código' }).click()
+  await page.getByRole('button', { name: 'Entrar com Google' }).click()
 }
 
 async function completeProfile(page: Page) {
