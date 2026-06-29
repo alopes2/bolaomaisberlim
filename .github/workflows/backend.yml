@@ -23,7 +23,7 @@ jobs:
     environment: production
     env:
       AWS_REGION: eu-central-1
-      LAMBDA_FUNCTION_NAMES: ${{ fromJson(vars.LAMBDA_FUNCTION_NAMES) }}
+      LAMBDA_FUNCTION_NAMES: ${{ vars.LAMBDA_FUNCTION_NAMES }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
