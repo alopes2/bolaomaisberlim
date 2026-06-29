@@ -75,7 +75,12 @@ Crie o ambiente protegido `production`, com aprovação obrigatória para deploy
 | `SES_IDENTITY_ARN` | opcional; identidade SES verificada |
 | `SES_FROM_EMAIL` | opcional; remetente correspondente |
 
-Configure o GitHub Secret protegido `API_FOOTBALL_KEY`. O workflow de infraestrutura o expõe apenas ao Terraform como `TF_VAR_api_football_key`; o plan é armazenado como artifact privado e não é publicado em comentários ou logs.
+Configure os GitHub Secrets protegidos:
+
+- `API_FOOTBALL_KEY`: o workflow de infraestrutura o expõe apenas ao Terraform como `TF_VAR_api_football_key`;
+- `ADMIN_EMAILS`: array JSON com os e-mails administradores, por exemplo `["admin1@example.com", "admin2@example.com"]`, exposto como `TF_VAR_admin_emails`.
+
+O plan é armazenado como artifact privado e não é publicado em comentários ou logs. O Terraform gerencia esses usuários: remover um e-mail da lista remove o usuário correspondente do Cognito. Embora `ADMIN_EMAILS` seja um secret do GitHub, os e-mails aparecem nos endereços dos recursos, no plan e no state do Terraform.
 
 As trust policies das roles externas devem restringir `sub` ao repositório/branch ou ao ambiente `production`. As permissões mínimas são:
 

@@ -38,3 +38,25 @@ resource "aws_cognito_user_group" "admins" {
   user_pool_id = aws_cognito_user_pool.main.id
   description  = "MaisBerlim bolao administrators"
 }
+
+resource "aws_cognito_user" "admins" {
+  for_each = var.admin_emails
+
+  user_pool_id = aws_cognito_user_pool.main.id
+  username     = each.value
+
+  attributes = {
+    email          = each.value
+    email_verified = "true"
+  }
+
+  message_action = "SUPPRESS"
+}
+
+resource "aws_cognito_user_in_group" "admins" {
+  for_each = var.admin_emails
+
+  user_pool_id = aws_cognito_user_pool.main.id
+  group_name   = aws_cognito_user_group.admins.name
+  username     = aws_cognito_user.admins[each.key].username
+}

@@ -22,6 +22,11 @@ variable "api_football_key" {
   sensitive   = true
 }
 
+variable "admin_emails" {
+  description = "Email addresses for Terraform-managed Cognito administrators."
+  type        = set(string)
+}
+
 variable "ses_identity_arn" {
   description = "Verified SES identity ARN for production Cognito email; null uses Cognito default email."
   type        = string
