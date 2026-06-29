@@ -8,6 +8,8 @@ Este documento é um mapa curto do domínio. Os nomes em inglês correspondem ao
 - **Match**: jogo publicado, com seleções e horário oficial. O cutoff ocorre 10 minutos antes do início.
 - **Prediction**: versão final do palpite de um participante para um jogo. Uma edição substitui a anterior e atualiza `SubmittedAt`.
 - **MatchResult**: snapshot do resultado de um jogo. Pode ser provisório, enquanto aguarda revisão, ou confirmado pela administração.
+- **Polling**: consulta automática da partida a cada 10 minutos, do início até o estado final ou no máximo quatro horas.
+- **UnresolvedPlayer**: jogador retornado pela API-Football que não corresponde a exatamente um nome do elenco local; exige seleção administrativa antes da confirmação.
 - **ScoreBreakdown**: pontos obtidos por um palpite em cada categoria do jogo. O total máximo é 18.
 - **Standing**: classificação acumulada de um participante: pontos totais, contadores de desempate, horário e jogos já aplicados.
 - **ResultVersion**: identificador da versão confirmada. Reprocessar a mesma versão não aplica pontos novamente.
@@ -48,12 +50,14 @@ Editar um palpite substitui o horário anterior para o desempate. O ranking púb
 ## Fluxo do resultado e ranking
 
 1. A API-Football fornece placar, autores dos gols e cartões.
-2. O sistema grava um `MatchResult` provisório, visível somente à administração.
+2. O sistema relaciona nomes sem diferenciar maiúsculas ou acentos e grava um `MatchResult` provisório, visível somente à administração.
 3. A administração revisa e corrige os dados antes de confirmar.
 4. A confirmação calcula um `ScoreBreakdown` para cada `Prediction`.
 5. Os pontos são aplicados ao `Standing` de cada participante e a `ResultVersion` é marcada como publicada.
 6. Repetir a mesma publicação é um no-op; os pontos não são duplicados.
 7. Somente depois da confirmação o ranking público e o vencedor da rodada são atualizados.
+
+O polling para imediatamente em `FT`, `AET`, `PEN`, partida adiada ou suspensa. O backend usa no máximo 80 das 100 chamadas diárias e preserva 20 para diagnóstico; uma sonda após 24 horas permite detectar o reset informado pelos headers da API.
 
 ## Rotas principais
 

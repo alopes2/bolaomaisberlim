@@ -723,11 +723,11 @@ Expected: PASS.
 - Test: `backend/tests/Bolao.Functions.Tests/FootballApi/FootballApiClientTests.cs`
 - Test: `backend/tests/Bolao.Functions.Tests/FootballApi/ApiQuotaGuardTests.cs`
 
-- [ ] **Step 1: Write failing HTTP mapping tests**
+- [x] **Step 1: Write failing HTTP mapping tests**
 
 Use a fake `HttpMessageHandler` with recorded fixture, events and statistics JSON. Assert mapping of `FT`, `AET`, `PEN`, `PST`, `SUSP`, first scorer, scorers per team, yellow totals and red totals.
 
-- [ ] **Step 2: Write the failing quota test**
+- [x] **Step 2: Write the failing quota test**
 
 ```csharp
 [Fact]
@@ -742,15 +742,15 @@ public async Task RejectsAutomaticCallAfterEightyReservations()
 }
 ```
 
-- [ ] **Step 3: Implement atomic quota reservation**
+- [x] **Step 3: Implement atomic quota reservation**
 
 Use DynamoDB `ADD RequestCount :one` with condition `attribute_not_exists(RequestCount) OR RequestCount < :limit`. After every provider response, persist its request-limit and request-remaining headers. Refuse another automatic or admin call when the provider reports 20 or fewer remaining requests. When the reported remaining value increases, treat that as the provider's quota reset and atomically reset the internal `RequestCount`; this avoids guessing the provider's reset timezone.
 
-- [ ] **Step 4: Implement the HTTP client**
+- [x] **Step 4: Implement the HTTP client**
 
 Read the key from the `FOOTBALL_API_KEY` environment variable, send it only in the required API-Football header, use a 10-second timeout and reserve quota before each request. Never log the key, headers or response bodies containing unexpected personal data.
 
-- [ ] **Step 5: Run backend tests**
+- [x] **Step 5: Run backend tests**
 
 Run: `dotnet test backend/Bolao.slnx`
 
@@ -766,7 +766,7 @@ Expected: PASS.
 - Modify: `infra/scheduler.tf`
 - Test: `backend/tests/Bolao.Functions.Tests/Jobs/MatchPollingHandlerTests.cs`
 
-- [ ] **Step 1: Write failing state-machine tests**
+- [x] **Step 1: Write failing state-machine tests**
 
 Cover:
 
@@ -778,21 +778,21 @@ kickoff+4h  -> stop without another provider call
 quota error -> stop safely and retain manual fallback
 ```
 
-- [ ] **Step 2: Confirm failure**
+- [x] **Step 2: Confirm failure**
 
 Run: `dotnet test backend/Bolao.slnx --filter FullyQualifiedName~MatchPollingHandlerTests`
 
 Expected: FAIL.
 
-- [ ] **Step 3: Implement schedules**
+- [x] **Step 3: Implement schedules**
 
 For each published match, create a named EventBridge schedule using `rate(10 minutes)`, `StartDate = kickoff`, `EndDate = kickoff + 4 hours`, and a payload containing only `matchId`. Delete it immediately after a terminal or postponed state.
 
-- [ ] **Step 4: Implement provisional calculation**
+- [x] **Step 4: Implement provisional calculation**
 
 Map API scorer names to local roster keys using accent-insensitive normalized full names. When zero or multiple local matches exist, store an unresolved mapping and block confirmation until an administrator selects the correct local player.
 
-- [ ] **Step 5: Verify jobs and Terraform configuration**
+- [x] **Step 5: Verify jobs and Terraform configuration**
 
 Run:
 

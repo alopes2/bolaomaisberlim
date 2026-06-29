@@ -169,13 +169,15 @@ resource "aws_lambda_function" "this" {
 
   environment {
     variables = merge({
-      PARTICIPANTS_TABLE_NAME = aws_dynamodb_table.this["participants"].name
-      MATCHES_TABLE_NAME      = aws_dynamodb_table.this["matches"].name
-      PREDICTIONS_TABLE_NAME  = aws_dynamodb_table.this["predictions"].name
-      STANDINGS_TABLE_NAME    = aws_dynamodb_table.this["standings"].name
-      API_USAGE_TABLE_NAME    = aws_dynamodb_table.this["api_usage"].name
-      COGNITO_USER_POOL_ID    = aws_cognito_user_pool.main.id
-      SCHEDULER_GROUP_NAME    = aws_scheduler_schedule_group.matches.name
+      PARTICIPANTS_TABLE_NAME    = aws_dynamodb_table.this["participants"].name
+      MATCHES_TABLE_NAME         = aws_dynamodb_table.this["matches"].name
+      PREDICTIONS_TABLE_NAME     = aws_dynamodb_table.this["predictions"].name
+      STANDINGS_TABLE_NAME       = aws_dynamodb_table.this["standings"].name
+      API_USAGE_TABLE_NAME       = aws_dynamodb_table.this["api_usage"].name
+      COGNITO_USER_POOL_ID       = aws_cognito_user_pool.main.id
+      SCHEDULER_GROUP_NAME       = aws_scheduler_schedule_group.matches.name
+      MATCH_POLLING_FUNCTION_ARN = "arn:${data.aws_partition.current.partition}:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.name_prefix}-match-polling"
+      SCHEDULER_INVOKE_ROLE_ARN  = aws_iam_role.scheduler_invoke.arn
       }, contains(["api", "daily_sync", "match_polling"], each.key) ? {
       FOOTBALL_API_KEY = var.api_football_key
     } : {})

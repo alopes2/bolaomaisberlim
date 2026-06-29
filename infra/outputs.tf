@@ -25,11 +25,3 @@ output "cloudfront_domain_name" {
 output "lambda_function_names" {
   value = { for key, function in aws_lambda_function.this : key => function.function_name }
 }
-
-output "github_role_arns" {
-  value = {
-    infra    = aws_iam_role.github_infra.arn
-    backend  = aws_iam_role.github_backend.arn
-    frontend = aws_iam_role.github_frontend.arn
-  }
-}

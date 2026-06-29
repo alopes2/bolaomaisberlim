@@ -176,11 +176,12 @@ A conta gratuita oferece 100 chamadas por dia. Somente o backend acessa a API-Fo
 - O ciclo encerra imediatamente nos estados finais `FT`, `AET` ou `PEN`.
 - O ciclo tem limite absoluto de quatro horas após o início.
 - Partidas adiadas ou suspensas interrompem o ciclo e exigem reagendamento administrativo.
-- Ao finalizar, o sistema busca os eventos e as estatísticas necessários para gols e cartões.
+- Cada consulta por ID usa o endpoint de fixture, que já inclui placar, eventos e estatísticas.
 - Um contador central bloqueia chamadas automáticas e administrativas ao atingir 80 no dia, reservando 20 chamadas para recuperação e diagnóstico.
+- Se o limite interno ou a reserva bloquear novas chamadas, uma única sonda é permitida após 24 horas; o aumento de `x-ratelimit-requests-remaining` confirma o reset do provedor e reinicia o contador interno.
 - O botão administrativo de sincronização possui intervalo mínimo.
 
-O consumo máximo esperado para uma partida é de aproximadamente 25 chamadas, além das consultas de eventos e estatísticas. Os dados de elencos e escalações nunca consomem quota.
+O consumo máximo esperado para uma partida é de aproximadamente 25 chamadas, já incluindo eventos e estatísticas. Os dados de elencos e escalações nunca consomem quota.
 
 ## Apuração e publicação
 
