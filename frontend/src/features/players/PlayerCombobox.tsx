@@ -41,7 +41,7 @@ export function PlayerCombobox({
   disabled = false,
 }: PlayerComboboxProps) {
   const inputId = useId();
-  const selected = players.find((player) => player.key === value).name ?? null;
+  const selected = players.find((player) => player.key === value)?.name ?? null;
   const teams = [
     ...new Set(players.map((player) => player.team).filter(Boolean)),
   ];
