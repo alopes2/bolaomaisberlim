@@ -11,6 +11,21 @@ const players = [
 ]
 
 describe('PlayerCombobox', () => {
+  it('displays the selected player name', () => {
+    render(
+      <PlayerCombobox
+        label="Primeiro gol"
+        players={players}
+        value="BRA:7"
+        onChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('combobox', { name: /primeiro gol/i })).toHaveValue(
+      'Vinícius Júnior',
+    )
+  })
+
   it('filters without accents and only returns roster options', async () => {
     const user = userEvent.setup()
     render(

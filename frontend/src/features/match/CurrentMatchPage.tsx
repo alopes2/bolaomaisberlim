@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
-import type { ApiClient, StoredPrediction } from '@/api/client';
+import type { ApiClient } from '@/api/client';
 import {
   Card,
   CardContent,

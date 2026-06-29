@@ -63,7 +63,8 @@ export function PlayerCombobox({
         items={teams.length > 1 ? groups : players}
         value={selected}
         onValueChange={(player) => onChange(player?.key ?? null)}
-        itemToStringValue={(player) => player.name}
+        itemToStringValue={(player) => player.key}
+        itemToStringLabel={(player) => player.name}
         filter={(player, query) =>
           normalize(player.name).includes(normalize(query))
         }

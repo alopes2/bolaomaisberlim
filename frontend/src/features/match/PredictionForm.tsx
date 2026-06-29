@@ -18,7 +18,7 @@ import {
 } from '@/features/players/PlayerCombobox';
 
 import { useCutoff } from './useCutoff';
-import type { PredictionAnswers, StoredPrediction } from '@/api/client';
+import type { PredictionAnswers } from '@/api/client';
 
 const predictionSchema = z.object({
   homeGoals: z.number().int().min(0),
