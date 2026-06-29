@@ -27,7 +27,7 @@ public class GatewayAuthenticationHandler(
             {
                 new("sub", token == "e2e-admin" ? "admin-1" : "user-1")
             };
-            if (token == "e2e-admin") claims.Add(new Claim("cognito:groups", "admins"));
+            if (token == "e2e-admin") claims.Add(new Claim("is_admin", "true"));
             return Task.FromResult(Success(claims));
         }
 
@@ -45,11 +45,6 @@ public class GatewayAuthenticationHandler(
             .Select(claim => new Claim(claim.Key, claim.Value))
             .ToList();
         claimsFromGateway.Add(new Claim("sub", subject));
-        if (gatewayClaims.TryGetValue("cognito:groups", out var groups))
-        {
-            claimsFromGateway.AddRange(groups.Trim('[', ']').Split(',', StringSplitOptions.RemoveEmptyEntries)
-                .Select(group => new Claim("cognito:groups", group.Trim(' ', '"'))));
-        }
 
         return Task.FromResult(Success(claimsFromGateway));
     }

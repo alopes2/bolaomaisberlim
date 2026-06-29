@@ -287,10 +287,9 @@ public class ParticipantEndpointTests
             }
 
             var claims = new List<Claim> { new("sub", subject.ToString()) };
-            if (Request.Headers.TryGetValue("X-Test-Groups", out var groups))
+            if (Request.Headers.TryGetValue("X-Test-Is-Admin", out var isAdmin))
             {
-                claims.AddRange(groups.ToString().Split(',')
-                    .Select(group => new Claim("cognito:groups", group.Trim())));
+                claims.Add(new Claim("is_admin", isAdmin.ToString()));
             }
 
             var identity = new ClaimsIdentity(claims, Scheme.Name);

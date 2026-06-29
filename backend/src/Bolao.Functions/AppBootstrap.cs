@@ -26,7 +26,7 @@ public static class AppBootstrap
         services.AddAuthorization(options =>
             options.AddPolicy("admins", policy => policy
                 .RequireAuthenticatedUser()
-                .RequireClaim("cognito:groups", "admins")));
+                .RequireClaim("is_admin", "true")));
         services.AddCors(options => options.AddDefaultPolicy(policy => policy
             .AllowAnyOrigin()
             .AllowAnyHeader()

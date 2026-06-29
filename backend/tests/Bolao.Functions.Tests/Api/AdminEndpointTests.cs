@@ -41,7 +41,7 @@ public class AdminEndpointTests
         await using var factory = new ParticipantEndpointTests.ApiFactory();
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Subject", "admin-1");
-        client.DefaultRequestHeaders.Add("X-Test-Groups", "admins");
+        client.DefaultRequestHeaders.Add("X-Test-Is-Admin", "true");
 
         var provisional = await client.GetFromJsonAsync<LeaderboardResponse>(
             "/admin/matches/match-1/provisional-leaderboard");

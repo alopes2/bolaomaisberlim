@@ -12,7 +12,7 @@ resource "aws_cognito_user_pool" "main" {
   lambda_config {
     pre_token_generation_config {
       lambda_arn     = aws_lambda_function.admin_claims.arn
-      lambda_version = "V1_0"
+      lambda_version = "V2_0"
     }
   }
 
