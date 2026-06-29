@@ -7,6 +7,18 @@ public static class ParticipantEndpoints
 {
     public static IEndpointRouteBuilder MapParticipantEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/me/profile", async (
+            HttpContext context,
+            IUserProfileService profiles,
+            CancellationToken cancellationToken) =>
+        {
+            var user = CurrentUser.From(context.User);
+            return user is null
+                ? ApiProblem.Unauthenticated()
+                : Results.Ok(new ProfileStatusResponse(
+                    await profiles.ExistsAsync(user.ParticipantId, cancellationToken)));
+        });
+
         endpoints.MapPut("/me/profile", async (
             HttpContext context,
             ProfileRequest request,

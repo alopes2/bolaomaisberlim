@@ -16,28 +16,6 @@ variable "environment" {
   default     = "dev"
 }
 
-variable "github_repository" {
-  description = "GitHub repository in owner/name format."
-  type        = string
-}
-
-variable "github_branch" {
-  description = "Protected branch allowed to assume deployment roles."
-  type        = string
-  default     = "main"
-}
-
-variable "github_environment" {
-  description = "Protected GitHub environment allowed to assume infrastructure roles."
-  type        = string
-  default     = "production"
-}
-
-variable "github_oidc_provider_arn" {
-  description = "ARN of the existing account-level GitHub OIDC provider."
-  type        = string
-}
-
 variable "api_football_key" {
   description = "API-Football key injected into the Lambdas that call the provider."
   type        = string

@@ -56,6 +56,7 @@ locals {
       "dynamodb:DeleteItem",
       "dynamodb:GetItem",
       "dynamodb:Query",
+      "dynamodb:Scan",
       "dynamodb:UpdateItem"
     ]
   }
@@ -64,7 +65,7 @@ locals {
 resource "aws_iam_role" "lambda" {
   for_each = local.lambda_functions
 
-  name = "${local.name_prefix}-${replace(each.key, "_", "-")}-lambda"
+  name = "${local.name_prefix}-${replace(each.key, "_", "-")}-lambda-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -80,7 +81,7 @@ resource "aws_iam_role" "lambda" {
 resource "aws_iam_role_policy" "lambda_logs" {
   for_each = local.lambda_functions
 
-  name = "logs"
+  name = "${local.name_prefix}-${replace(each.key, "_", "-")}-lambda-logs"
   role = aws_iam_role.lambda[each.key].id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -99,7 +100,7 @@ resource "aws_iam_role_policy" "lambda_logs" {
 resource "aws_iam_role_policy" "lambda_dynamodb" {
   for_each = local.lambda_functions
 
-  name = "dynamodb"
+  name = "${local.name_prefix}-${replace(each.key, "_", "-")}-lambda-dynamodb"
   role = aws_iam_role.lambda[each.key].id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -112,7 +113,7 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
 }
 
 resource "aws_iam_role_policy" "api_cognito" {
-  name = "cognito-profile"
+  name = "${local.name_prefix}-api-cognito"
   role = aws_iam_role.lambda["api"].id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -128,22 +129,22 @@ resource "aws_iam_role_policy" "api_cognito" {
 }
 
 resource "aws_iam_role_policy" "api_ses" {
-  count = var.ses_identity_arn == null ? 0 : 1
+  count = local.ses_identity_arn == null ? 0 : 1
 
-  name = "winner-email"
+  name = "${local.name_prefix}-api-ses"
   role = aws_iam_role.lambda["api"].id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
       Action   = ["ses:SendEmail"]
-      Resource = var.ses_identity_arn
+      Resource = local.ses_identity_arn
     }]
   })
 }
 
 resource "aws_iam_role_policy" "retention_cognito" {
-  name = "cognito-retention"
+  name = "${local.name_prefix}-retention-cognito"
   role = aws_iam_role.lambda["retention"].id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -178,7 +179,9 @@ resource "aws_lambda_function" "this" {
       SCHEDULER_GROUP_NAME       = aws_scheduler_schedule_group.matches.name
       MATCH_POLLING_FUNCTION_ARN = "arn:${data.aws_partition.current.partition}:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.name_prefix}-match-polling"
       SCHEDULER_INVOKE_ROLE_ARN  = aws_iam_role.scheduler_invoke.arn
-      }, contains(["api", "daily_sync", "match_polling"], each.key) ? {
+      }, each.key == "api" && local.ses_from_email != null ? {
+      SES_FROM_EMAIL = local.ses_from_email
+      } : {}, contains(["api", "daily_sync", "match_polling"], each.key) ? {
       FOOTBALL_API_KEY = var.api_football_key
     } : {})
   }

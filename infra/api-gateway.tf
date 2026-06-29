@@ -4,7 +4,7 @@ resource "aws_apigatewayv2_api" "http" {
 
   cors_configuration {
     allow_headers = ["authorization", "content-type"]
-    allow_methods = ["GET", "OPTIONS", "PUT"]
+    allow_methods = ["GET", "OPTIONS", "POST", "PUT"]
     allow_origins = ["*"]
     max_age       = 3600
   }
@@ -38,9 +38,19 @@ locals {
     "GET /matches/{matchId}/predictions"
   ])
   participant_routes = toset([
+    "GET /me/profile",
     "GET /matches/{matchId}/prediction",
     "PUT /matches/{matchId}/prediction",
     "PUT /me/profile"
+  ])
+  admin_routes = toset([
+    "POST /admin/matches",
+    "PUT /admin/matches/{matchId}",
+    "POST /admin/matches/{matchId}/sync",
+    "GET /admin/matches/{matchId}/raw-result",
+    "GET /admin/matches/{matchId}/provisional-leaderboard",
+    "PUT /admin/matches/{matchId}/result",
+    "POST /admin/matches/{matchId}/confirm"
   ])
 }
 
@@ -54,6 +64,16 @@ resource "aws_apigatewayv2_route" "public" {
 
 resource "aws_apigatewayv2_route" "participant" {
   for_each = local.participant_routes
+
+  api_id             = aws_apigatewayv2_api.http.id
+  route_key          = each.value
+  target             = "integrations/${aws_apigatewayv2_integration.api.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
+}
+
+resource "aws_apigatewayv2_route" "admin" {
+  for_each = local.admin_routes
 
   api_id             = aws_apigatewayv2_api.http.id
   route_key          = each.value

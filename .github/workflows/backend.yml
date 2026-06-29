@@ -1,0 +1,57 @@
+name: Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'assets/teams.json'
+      - '.github/workflows/backend.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: backend-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: eu-central-1
+      LAMBDA_FUNCTION_NAMES: ${{ vars.LAMBDA_FUNCTION_NAMES }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test backend/Bolao.slnx --configuration Release --verbosity minimal -m:1 /nodeReuse:false
+      - run: dotnet publish backend/src/Bolao.Functions/Bolao.Functions.csproj --configuration Release --output backend/publish --no-restore
+      - name: Create one deployment ZIP
+        working-directory: backend/publish
+        run: zip -q -r ../lambda.zip .
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy identical ZIP to every Lambda
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(openssl dgst -sha256 -binary backend/lambda.zip | openssl base64 -A)"
+          test -n "$LAMBDA_FUNCTION_NAMES"
+          for function_name in $LAMBDA_FUNCTION_NAMES; do
+            aws lambda update-function-code \
+              --function-name "$function_name" \
+              --zip-file fileb://backend/lambda.zip \
+              --query CodeSha256 \
+              --output text > deployed-checksum.txt
+            test "$(cat deployed-checksum.txt)" = "$expected"
+            aws lambda wait function-updated --function-name "$function_name"
+            actual="$(aws lambda get-function --function-name "$function_name" --query Configuration.CodeSha256 --output text)"
+            test "$actual" = "$expected"
+          done

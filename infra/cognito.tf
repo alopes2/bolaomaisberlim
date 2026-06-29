@@ -14,10 +14,10 @@ resource "aws_cognito_user_pool" "main" {
   }
 
   email_configuration {
-    email_sending_account  = var.ses_identity_arn == null ? "COGNITO_DEFAULT" : "DEVELOPER"
-    source_arn             = var.ses_identity_arn
-    from_email_address     = var.ses_from_email
-    reply_to_email_address = var.ses_from_email
+    email_sending_account  = local.ses_identity_arn == null ? "COGNITO_DEFAULT" : "DEVELOPER"
+    source_arn             = local.ses_identity_arn
+    from_email_address     = local.ses_from_email
+    reply_to_email_address = local.ses_from_email
   }
 }
 

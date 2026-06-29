@@ -1,14 +1,27 @@
 import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type { ApiClient } from '@/api/client'
 import { useAuth } from '@/auth/auth-context'
 import { ProfilePage } from '@/auth/ProfilePage'
 import { SignInPage } from '@/auth/SignInPage'
 import { CurrentMatchPage } from '@/features/match/CurrentMatchPage'
+import { PrivacyPage } from '@/features/legal/PrivacyPage'
+import { RulesPage } from '@/features/legal/RulesPage'
+import { AdminMatchPage } from '@/features/admin/AdminMatchPage'
 
 export function App({ api }: { api: ApiClient }) {
   const auth = useAuth()
+  const queryClient = useQueryClient()
   const [profileCompleted, setProfileCompleted] = useState(false)
+  const profileQuery = useQuery({
+    queryKey: ['profile-status'],
+    queryFn: () => api.hasProfile(),
+    enabled: auth.status === 'authenticated' && !window.location.pathname.startsWith('/admin'),
+  })
+
+  if (window.location.pathname === '/regras') return <RulesPage />
+  if (window.location.pathname === '/privacidade') return <PrivacyPage />
 
   if (auth.status === 'checking') {
     return (
@@ -22,9 +35,24 @@ export function App({ api }: { api: ApiClient }) {
     return <SignInPage auth={auth.client} onAuthenticated={auth.refresh} />
   }
 
-  return profileCompleted ? (
+  if (window.location.pathname.startsWith('/admin')) {
+    const matchId = new URLSearchParams(window.location.search).get('matchId')
+    return matchId
+      ? <AdminMatchPage api={api} matchId={matchId} />
+      : <main className="p-4 text-sm text-muted-foreground">Informe o jogo com ?matchId=...</main>
+  }
+
+
+  if (profileQuery.isPending && !profileCompleted) {
+    return <main className="p-4 text-sm text-muted-foreground">Verificando perfil…</main>
+  }
+
+  return profileCompleted || profileQuery.data ? (
     <CurrentMatchPage api={api} />
   ) : (
-    <ProfilePage api={api} onCompleted={() => setProfileCompleted(true)} />
+    <ProfilePage api={api} onCompleted={() => {
+      setProfileCompleted(true)
+      queryClient.setQueryData(['profile-status'], true)
+    }} />
   )
 }

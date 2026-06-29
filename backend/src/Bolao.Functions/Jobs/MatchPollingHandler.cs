@@ -26,7 +26,9 @@ public record UnresolvedPlayerMapping(
 
 public record ProvisionalResult(
     ConfirmedResult Result,
-    IReadOnlyList<UnresolvedPlayerMapping> UnresolvedPlayers);
+    IReadOnlyList<UnresolvedPlayerMapping> UnresolvedPlayers,
+    int? HomeGoalEvents = null,
+    int? AwayGoalEvents = null);
 
 public interface IMatchPollingStore
 {
@@ -164,7 +166,9 @@ public class MatchPollingHandler(
                 awayCards.Yellow,
                 homeCards.Red,
                 awayCards.Red),
-            unresolved.Values.ToArray());
+            unresolved.Values.ToArray(),
+            fixture.ScorersByTeam.GetValueOrDefault(fixture.HomeTeamId)?.Values.Sum() ?? 0,
+            fixture.ScorersByTeam.GetValueOrDefault(fixture.AwayTeamId)?.Values.Sum() ?? 0);
     }
 
     private static IReadOnlyList<FootballPlayer> TopScorers(FootballFixture fixture, long teamId)

@@ -14,6 +14,7 @@ Este documento é um mapa curto do domínio. Os nomes em inglês correspondem ao
 - **Standing**: classificação acumulada de um participante: pontos totais, contadores de desempate, horário e jogos já aplicados.
 - **ResultVersion**: identificador da versão confirmada. Reprocessar a mesma versão não aplica pontos novamente.
 - **Leaderboard**: lista pública ordenada a partir dos `Standing` confirmados. Dados provisórios não são expostos.
+- **PrizeHandedOverAt**: data registrada pela administração após a entrega do prêmio; inicia a janela de retenção do participante.
 
 ## Pontuação por jogo
 
@@ -58,6 +59,21 @@ Editar um palpite substitui o horário anterior para o desempate. O ranking púb
 7. Somente depois da confirmação o ranking público e o vencedor da rodada são atualizados.
 
 O polling para imediatamente em `FT`, `AET`, `PEN`, partida adiada ou suspensa. O backend usa no máximo 80 das 100 chamadas diárias e preserva 20 para diagnóstico; uma sonda após 24 horas permite detectar o reset informado pelos headers da API.
+
+## Fluxo de retenção
+
+1. Após entregar o prêmio, a administração registra `PrizeHandedOverAt` no jogo.
+2. O job diário calcula, para cada participante, a data mais recente entre as rodadas em que participou.
+3. Depois de 90 dias, solicita a exclusão da conta no Cognito e remove ou anonimiza nome completo, nome público e referência de conta.
+4. Pontuações agregadas podem permanecer sem a associação aos dados privados.
+
+## Fluxo de deploy
+
+1. Pull requests de infraestrutura executam formato, validação e plan privado.
+2. A branch principal aplica Terraform somente pelo ambiente GitHub protegido.
+3. Backend publica um único ZIP e verifica o mesmo checksum em todas as Lambdas.
+4. Frontend sincroniza `dist/` no bucket privado e aguarda a invalidação do CloudFront.
+5. As roles GitHub OIDC são externas a este Terraform; secrets não entram no repositório.
 
 ## Rotas principais
 

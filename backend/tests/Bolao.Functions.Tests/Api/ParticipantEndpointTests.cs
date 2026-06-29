@@ -6,6 +6,7 @@ using Bolao.Functions.Api;
 using Bolao.Functions.Domain;
 using Bolao.Functions.Persistence;
 using Bolao.Functions.Rosters;
+using Bolao.Functions.Jobs;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -135,6 +136,7 @@ public class ParticipantEndpointTests
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            builder.UseEnvironment("E2E");
             builder.ConfigureTestServices(services =>
             {
                 services.AddAuthentication("Test")
@@ -144,19 +146,22 @@ public class ParticipantEndpointTests
                 services.RemoveAll<IMatchRepository>();
                 services.RemoveAll<IPredictionRepository>();
                 services.RemoveAll<IRosterCatalog>();
+                services.RemoveAll<IAdminApi>();
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<IApiQueries>(State);
                 services.AddSingleton<IUserProfileService>(State);
                 services.AddSingleton<IMatchRepository>(State);
                 services.AddSingleton<IPredictionRepository>(State);
                 services.AddSingleton<IRosterCatalog>(State);
+                services.AddSingleton<IAdminApi>(State);
                 services.AddSingleton<TimeProvider>(State.Time);
             });
         }
     }
 
     internal class TestState(DateTimeOffset now)
-        : IApiQueries, IUserProfileService, IMatchRepository, IPredictionRepository, IRosterCatalog
+        : IApiQueries, IUserProfileService, IMatchRepository, IPredictionRepository, IRosterCatalog,
+            IAdminApi
     {
         private readonly Match match = new("match-1", ApiFactory.Kickoff, "BRA", "ARG");
         private readonly StoredPrediction prediction =
@@ -233,6 +238,32 @@ public class ParticipantEndpointTests
                 string.Empty,
                 keys.Select(key => new Player(key, 10, "", key)).ToArray()));
         }
+
+        public Task CreateMatchAsync(AdminMatchRequest request, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task UpdateMatchAsync(
+            string matchId,
+            AdminMatchRequest request,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task SyncMatchAsync(string matchId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<object?> GetRawResultAsync(string matchId, CancellationToken cancellationToken) =>
+            Task.FromResult<object?>(new { status = "FT" });
+
+        public Task<LeaderboardResponse> GetProvisionalLeaderboardAsync(
+            string matchId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new LeaderboardResponse(
+                [new LeaderboardEntry(1, "Bruno B.", 12, 1, 0)],
+                new RoundWinner("Bruno B.", 12)));
+
+        public Task SaveResultAsync(
+            string matchId,
+            ProvisionalResult result,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     internal class MutableTimeProvider(DateTimeOffset now) : TimeProvider
@@ -255,9 +286,14 @@ public class ParticipantEndpointTests
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
 
-            var identity = new ClaimsIdentity(
-                [new Claim("sub", subject.ToString())],
-                Scheme.Name);
+            var claims = new List<Claim> { new("sub", subject.ToString()) };
+            if (Request.Headers.TryGetValue("X-Test-Groups", out var groups))
+            {
+                claims.AddRange(groups.ToString().Split(',')
+                    .Select(group => new Claim("cognito:groups", group.Trim())));
+            }
+
+            var identity = new ClaimsIdentity(claims, Scheme.Name);
             var principal = new ClaimsPrincipal(identity);
             return Task.FromResult(AuthenticateResult.Success(
                 new AuthenticationTicket(principal, Scheme.Name)));

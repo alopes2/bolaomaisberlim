@@ -8,8 +8,10 @@
 
   <ItemGroup>
     <PackageReference Include="Amazon.Lambda.AspNetCoreServer" Version="10.1.1" />
+    <PackageReference Include="AWSSDK.CognitoIdentityProvider" Version="4.0.10.1" />
     <PackageReference Include="AWSSDK.DynamoDBv2" Version="4.0.21.7" />
     <PackageReference Include="AWSSDK.Scheduler" Version="4.0.3.10" />
+    <PackageReference Include="AWSSDK.SimpleEmailV2" Version="4.0.14.9" />
   </ItemGroup>
 
   <ItemGroup>

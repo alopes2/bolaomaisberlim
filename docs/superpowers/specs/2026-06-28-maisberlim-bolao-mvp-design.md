@@ -145,7 +145,7 @@ Next.js não será usado: a API é separada, as telas principais são interativa
 - O workflow de backend compila e testa o .NET 10, gera um único pacote versionado e publica esse mesmo artefato em todas as Lambdas.
 - O workflow de frontend testa e compila a SPA, sincroniza `dist/` no bucket privado e invalida o CloudFront.
 - Terraform é responsável pela configuração das Lambdas e do hosting; os workflows de aplicação são responsáveis apenas pelo código das Lambdas e pelo conteúdo do bucket da UI.
-- Como o bucket de estado e o provider OIDC já existem, o único bootstrap manual é o primeiro `terraform apply` com credenciais locais para criar as roles do projeto. Depois disso, as implantações normais ocorrem pelo GitHub Actions.
+- Como o bucket de estado, o provider OIDC e as roles de deploy já existem fora deste projeto, este Terraform apenas provisiona a aplicação. Os workflows recebem os ARNs das roles por GitHub Variables.
 
 ### Entidades lógicas
 

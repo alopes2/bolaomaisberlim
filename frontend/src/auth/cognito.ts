@@ -14,6 +14,7 @@ export interface AuthClient {
 }
 
 export function configureCognitoAuth() {
+  if (import.meta.env.VITE_E2E === 'true') return
   const userPoolId = import.meta.env.VITE_COGNITO_USER_POOL_ID
   const userPoolClientId = import.meta.env.VITE_COGNITO_CLIENT_ID
 
@@ -30,6 +31,29 @@ export function configureCognitoAuth() {
       },
     },
   })
+}
+
+class E2EAuthClient implements AuthClient {
+  private pendingEmail = ''
+
+  async start(email: string) {
+    this.pendingEmail = email
+  }
+
+  async confirm() {
+    localStorage.setItem(
+      'bolao-e2e-token',
+      this.pendingEmail.startsWith('admin@') ? 'e2e-admin' : 'e2e-user',
+    )
+  }
+
+  async signOut() {
+    localStorage.removeItem('bolao-e2e-token')
+  }
+
+  async accessToken() {
+    return localStorage.getItem('bolao-e2e-token')
+  }
 }
 
 class CognitoAuthClient implements AuthClient {
@@ -71,4 +95,6 @@ class CognitoAuthClient implements AuthClient {
   }
 }
 
-export const cognitoAuth = new CognitoAuthClient()
+export const cognitoAuth = import.meta.env.VITE_E2E === 'true'
+  ? new E2EAuthClient()
+  : new CognitoAuthClient()

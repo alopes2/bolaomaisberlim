@@ -1,19 +1,10 @@
-using Bolao.Functions.Api;
-using Bolao.Functions.Domain;
+using Bolao.Functions;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddAuthentication();
-builder.Services.AddAuthorization();
-builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddScoped<PredictionService>();
+AppBootstrap.ConfigureServices(builder.Services, builder.Environment);
 
 var app = builder.Build();
-
-app.UseAuthentication();
-app.UseAuthorization();
-app.MapPublicEndpoints();
-app.MapParticipantEndpoints();
-
+AppBootstrap.ConfigurePipeline(app);
 app.Run();
 
 public partial class Program;

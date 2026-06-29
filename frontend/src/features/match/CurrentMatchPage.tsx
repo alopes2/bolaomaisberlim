@@ -31,6 +31,12 @@ export function CurrentMatchPage({ api }: { api: ApiClient }) {
     queryKey: ['match-history'],
     queryFn: () => api.getMatchHistory(),
   })
+  const publicPredictionsQuery = useQuery({
+    queryKey: ['public-predictions', matchQuery.data?.id],
+    queryFn: () => api.getPublicPredictions(matchQuery.data!.id),
+    enabled: Boolean(matchQuery.data),
+    retry: false,
+  })
   const savePrediction = useMutation({
     mutationFn: ({ matchId, prediction }: { matchId: string; prediction: PredictionValues }) =>
       api.savePrediction(matchId, prediction),
@@ -83,6 +89,23 @@ export function CurrentMatchPage({ api }: { api: ApiClient }) {
           ) : null}
         </CardContent>
       </Card>
+      {publicPredictionsQuery.isSuccess ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Palpites da comunidade</CardTitle>
+            <CardDescription>Disponíveis depois do encerramento dos envios.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col gap-2">
+              {publicPredictionsQuery.data.map((prediction) => (
+                <li key={prediction.publicName} className="text-sm">
+                  <strong>{prediction.publicName}</strong>: {prediction.answers.homeGoals} × {prediction.answers.awayGoals}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
       {leaderboardQuery.isPending ? (
         <Skeleton className="h-32 w-full" />
       ) : leaderboardQuery.isSuccess ? (

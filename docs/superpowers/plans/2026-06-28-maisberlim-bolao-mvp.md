@@ -819,11 +819,11 @@ Expected: PASS.
 - Test: `backend/tests/Bolao.Functions.Tests/Notifications/WinnerNotificationServiceTests.cs`
 - Test: `frontend/src/features/admin/AdminMatchPage.test.tsx`
 
-- [ ] **Step 1: Write failing authorization tests**
+- [x] **Step 1: Write failing authorization tests**
 
 An authenticated user without `admins` gets `403` for every `/admin/*` route. An admin can view provisional ranking while `/leaderboard` still returns the previous confirmed standings.
 
-- [ ] **Step 2: Define and test admin routes**
+- [x] **Step 2: Define and test admin routes**
 
 ```text
 POST /admin/matches
@@ -837,19 +837,19 @@ POST /admin/matches/{id}/confirm
 
 Confirmation must fail when scorer mappings are unresolved or result totals are inconsistent with goal events.
 
-- [ ] **Step 3: Implement confirmation audit**
+- [x] **Step 3: Implement confirmation audit**
 
 Persist `ConfirmedBySub`, `ConfirmedAt`, immutable confirmed snapshot and monotonically increasing `ResultVersion`. Invoke the idempotent publication service from Task 5.
 
-- [ ] **Step 4: Prevent automatic duplicate winner notifications**
+- [x] **Step 4: Prevent automatic duplicate winner notifications**
 
 Resolve the winner's email from Cognito only after the result is confirmed. Send a concise SES message identifying the match and public winner name, without including other participants or predictions. Claim `WinnerNotificationVersion` with a conditional write before calling SES and store `WinnerNotifiedAt` after success. A repeated confirmation of the same `ResultVersion` must not send again. Surface explicit SES failures to the admin for manual retry, noting that delivery providers cannot offer a strict exactly-once guarantee across a process crash.
 
-- [ ] **Step 5: Implement the admin UI**
+- [x] **Step 5: Implement the admin UI**
 
 Check `npx shadcn@latest info`, read docs, and add only missing `alert-dialog`, `badge`, `field`, `input` and `button` components. Show raw provider status, mapped goals, card totals, unresolved players, editable official values, provisional leaderboard and explicit confirmation dialog. Disable confirmation until validation passes.
 
-- [ ] **Step 6: Run backend and frontend tests**
+- [x] **Step 6: Run backend and frontend tests**
 
 Run: `dotnet test backend/Bolao.slnx && npm --prefix frontend run test:run`
 
@@ -866,19 +866,19 @@ Expected: PASS.
 - Modify: `infra/scheduler.tf`
 - Test: `backend/tests/Bolao.Functions.Tests/Jobs/DataRetentionHandlerTests.cs`
 
-- [ ] **Step 1: Write failing retention tests**
+- [x] **Step 1: Write failing retention tests**
 
 Seed a completed competition whose prize handover was 91 days ago and another at 89 days. Assert the handler deletes the first participant PII/account reference and retains the second while preserving anonymized aggregate results.
 
-- [ ] **Step 2: Implement legal pages from the approved rules**
+- [x] **Step 2: Implement legal pages from the approved rules**
 
 Include points, top-scorer tie reduction, 0-0 behavior, API-Football as reference, admin confirmation authority, 10-minute cutoff, edit timestamp rule, public-name format, prize validation and 90-day deletion window. Do not add unreviewed marketing or legal claims.
 
-- [ ] **Step 3: Implement scheduled retention**
+- [x] **Step 3: Implement scheduled retention**
 
 Run daily. Delete or anonymize expired participant records and request Cognito user deletion through an explicitly scoped IAM permission. Record only counts and internal operation IDs in logs.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `dotnet test backend/Bolao.slnx && npm --prefix frontend run test:run`
 
@@ -896,11 +896,11 @@ Expected: PASS.
 - Create: `frontend/e2e/admin-result-flow.spec.ts`
 - Modify: `README.md`
 
-- [ ] **Step 1: Add a deterministic local test mode**
+- [x] **Step 1: Add a deterministic local test mode**
 
 Configure the backend to use in-memory repositories, fake claims and recorded API-Football fixtures only when `ASPNETCORE_ENVIRONMENT=E2E`. Refuse to start this mode when `AWS_EXECUTION_ENV` is present.
 
-- [ ] **Step 2: Write the participant E2E flow**
+- [x] **Step 2: Write the participant E2E flow**
 
 Test mobile viewport `390x844`:
 
@@ -910,7 +910,7 @@ sign in -> complete profile -> select searchable players -> submit -> edit
 -> verify other predictions become visible
 ```
 
-- [ ] **Step 3: Write the admin/result E2E flow**
+- [x] **Step 3: Write the admin/result E2E flow**
 
 ```text
 admin opens provisional ranking -> resolves scorer mapping -> confirms result
@@ -918,19 +918,19 @@ admin opens provisional ranking -> resolves scorer mapping -> confirms result
 -> refresh preserves confirmed ranking and does not duplicate points
 ```
 
-- [ ] **Step 4: Add the Terraform workflow**
+- [x] **Step 4: Add the Terraform workflow**
 
 On pull requests touching `infra/**`, run `terraform fmt -check`, `init`, `validate` and `plan`, then upload the plan as a private workflow artifact. On pushes to the protected main branch, recreate the reviewed plan and apply it through a protected GitHub environment. Authenticate with `aws-actions/configure-aws-credentials` and GitHub OIDC; set only `id-token: write` and `contents: read`. Serialize applies with a concurrency group. Plan output must not be posted to public logs or pull-request comments because it can contain sensitive values.
 
-- [ ] **Step 5: Add the backend deployment workflow**
+- [x] **Step 5: Add the backend deployment workflow**
 
 On pushes to main touching `backend/**`, and on manual dispatch for the first deployment, run Release tests and `dotnet publish`, create one ZIP once, assume the dedicated backend deploy role through OIDC, and call `aws lambda update-function-code` for every configured Lambda name. Every function must receive the exact same ZIP checksum. Wait for each update to complete and fail the workflow if any function fails. Do not run Terraform or mutate Lambda configuration in this workflow.
 
-- [ ] **Step 6: Add the frontend deployment workflow**
+- [x] **Step 6: Add the frontend deployment workflow**
 
 On pushes to main touching `frontend/**`, and on manual dispatch for the first deployment, run tests and build with non-secret API/Cognito values supplied as GitHub environment variables. Assume the dedicated frontend role through OIDC, run `aws s3 sync frontend/dist/ s3://$BUCKET --delete`, then create and wait for a CloudFront invalidation of `/*`. Grant this role access only to the UI bucket and its distribution.
 
-- [ ] **Step 7: Document deployment and operations**
+- [x] **Step 7: Document deployment and operations**
 
 README must contain exact prerequisites and commands:
 
@@ -944,9 +944,9 @@ terraform -chdir=infra validate
 terraform -chdir=infra plan
 ```
 
-Also document the existing state bucket, one-time local apply for OIDC roles, protected GitHub environments, required repository/environment variables, adding an admin to the Cognito group, supplying `TF_VAR_api_football_key` from a protected GitHub secret, checking `ApiUsage`, manual result fallback, SES/domain migration and workflow rollback procedures.
+Also document the existing state bucket, externally managed OIDC roles, protected GitHub environments, required repository/environment variables, adding an admin to the Cognito group, supplying `TF_VAR_api_football_key` from a protected GitHub secret, checking `ApiUsage`, manual result fallback, SES/domain migration and workflow rollback procedures.
 
-- [ ] **Step 8: Run the complete verification suite**
+- [x] **Step 8: Run the complete verification suite**
 
 Run:
 
@@ -962,6 +962,6 @@ terraform -chdir=infra validate
 
 Expected: every command exits 0; no browser console errors; no secrets or personal data appear in build artifacts or captured logs.
 
-- [ ] **Step 9: Report the handoff without committing**
+- [x] **Step 9: Report the handoff without committing**
 
 Provide changed-file summary, verification outputs, deployment prerequisites still requiring owner action (AWS credentials, API-Football key, Cognito test recipients, SES production access and DNS), and stop for the repository owner to commit.
