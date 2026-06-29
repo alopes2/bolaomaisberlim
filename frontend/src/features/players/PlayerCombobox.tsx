@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId } from 'react';
 
 import {
   Combobox,
@@ -10,28 +10,28 @@ import {
   ComboboxItem,
   ComboboxLabel,
   ComboboxList,
-} from '@/components/ui/combobox'
-import { Field, FieldLabel } from '@/components/ui/field'
+} from '@/components/ui/combobox';
+import { Field, FieldLabel } from '@/components/ui/field';
 
 export type PlayerOption = {
-  key: string
-  name: string
-  team?: string
-}
+  key: string;
+  name: string;
+  team?: string;
+};
 
 type PlayerComboboxProps = {
-  label: string
-  players: PlayerOption[]
-  value: string | null
-  onChange: (value: string | null) => void
-  disabled?: boolean
-}
+  label: string;
+  players: PlayerOption[];
+  value: string | null;
+  onChange: (value: string | null) => void;
+  disabled?: boolean;
+};
 
 const normalize = (value: string) =>
   value
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
-    .toLocaleLowerCase('pt-BR')
+    .toLocaleLowerCase('pt-BR');
 
 export function PlayerCombobox({
   label,
@@ -40,19 +40,21 @@ export function PlayerCombobox({
   onChange,
   disabled = false,
 }: PlayerComboboxProps) {
-  const inputId = useId()
-  const selected = players.find((player) => player.key === value) ?? null
-  const teams = [...new Set(players.map((player) => player.team).filter(Boolean))]
+  const inputId = useId();
+  const selected = players.find((player) => player.key === value).name ?? null;
+  const teams = [
+    ...new Set(players.map((player) => player.team).filter(Boolean)),
+  ];
   const groups = teams.map((team) => ({
     team,
     items: players.filter((player) => player.team === team),
-  }))
+  }));
 
   const renderPlayer = (player: PlayerOption) => (
     <ComboboxItem key={player.key} value={player}>
       {player.name}
     </ComboboxItem>
-  )
+  );
 
   return (
     <Field data-disabled={disabled}>
@@ -84,5 +86,5 @@ export function PlayerCombobox({
         </ComboboxContent>
       </Combobox>
     </Field>
-  )
+  );
 }

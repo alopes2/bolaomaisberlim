@@ -1,8 +1,8 @@
-import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm } from 'react-hook-form'
-import { z } from 'zod'
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Controller, useForm } from 'react-hook-form';
+import { z } from 'zod';
 
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/button';
 import {
   Field,
   FieldDescription,
@@ -10,14 +10,15 @@ import {
   FieldLabel,
   FieldLegend,
   FieldSet,
-} from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+} from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import {
   PlayerCombobox,
   type PlayerOption,
-} from '@/features/players/PlayerCombobox'
+} from '@/features/players/PlayerCombobox';
 
-import { useCutoff } from './useCutoff'
+import { useCutoff } from './useCutoff';
+import type { PredictionAnswers, StoredPrediction } from '@/api/client';
 
 const predictionSchema = z.object({
   homeGoals: z.number().int().min(0),
@@ -29,19 +30,20 @@ const predictionSchema = z.object({
   awayYellowCards: z.number().int().min(0),
   homeRedCards: z.number().int().min(0),
   awayRedCards: z.number().int().min(0),
-})
+});
 
-export type PredictionValues = z.infer<typeof predictionSchema>
+export type PredictionValues = z.infer<typeof predictionSchema>;
 
 type PredictionFormProps = {
-  homeTeam: string
-  awayTeam: string
-  homePlayers: PlayerOption[]
-  awayPlayers: PlayerOption[]
-  cutoffAt: string
-  submittedAt?: string | null
-  onSubmit: (prediction: PredictionValues) => void | Promise<void>
-}
+  homeTeam: string;
+  awayTeam: string;
+  homePlayers: PlayerOption[];
+  awayPlayers: PlayerOption[];
+  cutoffAt: string;
+  submittedAt?: string | null;
+  storedPrediction?: PredictionAnswers | null;
+  onSubmit: (prediction: PredictionValues) => void | Promise<void>;
+};
 
 export function PredictionForm({
   homeTeam,
@@ -51,26 +53,41 @@ export function PredictionForm({
   cutoffAt,
   submittedAt = null,
   onSubmit,
+  storedPrediction,
 }: PredictionFormProps) {
-  const closed = useCutoff(cutoffAt)
+  const closed = useCutoff(cutoffAt);
+  let defaultValues: PredictionValues = {
+    homeGoals: 0,
+    awayGoals: 0,
+    firstScorerKey: '',
+    homeTopScorerKey: '',
+    awayTopScorerKey: '',
+    homeYellowCards: 0,
+    awayYellowCards: 0,
+    homeRedCards: 0,
+    awayRedCards: 0,
+  };
+  if (storedPrediction) {
+    defaultValues = {
+      homeGoals: storedPrediction.homeGoals,
+      awayGoals: storedPrediction.awayGoals,
+      firstScorerKey: storedPrediction.firstScorerKey,
+      homeTopScorerKey: storedPrediction.homeTopScorerKey,
+      awayTopScorerKey: storedPrediction.awayTopScorerKey,
+      homeYellowCards: storedPrediction.homeYellowCards,
+      awayYellowCards: storedPrediction.awayYellowCards,
+      homeRedCards: storedPrediction.homeRedCards,
+      awayRedCards: storedPrediction.awayRedCards,
+    };
+  }
   const form = useForm<PredictionValues>({
     resolver: zodResolver(predictionSchema),
-    defaultValues: {
-      homeGoals: 0,
-      awayGoals: 0,
-      firstScorerKey: '',
-      homeTopScorerKey: '',
-      awayTopScorerKey: '',
-      homeYellowCards: 0,
-      awayYellowCards: 0,
-      homeRedCards: 0,
-      awayRedCards: 0,
-    },
-  })
+    defaultValues: defaultValues,
+  });
   const firstScorers = [
     ...homePlayers.map((player) => ({ ...player, team: homeTeam })),
     ...awayPlayers.map((player) => ({ ...player, team: awayTeam })),
-  ]
+  ];
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -144,19 +161,39 @@ export function PredictionForm({
           <FieldGroup className="grid grid-cols-2 gap-3">
             <Field>
               <FieldLabel htmlFor="home-yellow">Amarelos {homeTeam}</FieldLabel>
-              <Input id="home-yellow" type="number" min={0} {...form.register('homeYellowCards', { valueAsNumber: true })} />
+              <Input
+                id="home-yellow"
+                type="number"
+                min={0}
+                {...form.register('homeYellowCards', { valueAsNumber: true })}
+              />
             </Field>
             <Field>
               <FieldLabel htmlFor="away-yellow">Amarelos {awayTeam}</FieldLabel>
-              <Input id="away-yellow" type="number" min={0} {...form.register('awayYellowCards', { valueAsNumber: true })} />
+              <Input
+                id="away-yellow"
+                type="number"
+                min={0}
+                {...form.register('awayYellowCards', { valueAsNumber: true })}
+              />
             </Field>
             <Field>
               <FieldLabel htmlFor="home-red">Vermelhos {homeTeam}</FieldLabel>
-              <Input id="home-red" type="number" min={0} {...form.register('homeRedCards', { valueAsNumber: true })} />
+              <Input
+                id="home-red"
+                type="number"
+                min={0}
+                {...form.register('homeRedCards', { valueAsNumber: true })}
+              />
             </Field>
             <Field>
               <FieldLabel htmlFor="away-red">Vermelhos {awayTeam}</FieldLabel>
-              <Input id="away-red" type="number" min={0} {...form.register('awayRedCards', { valueAsNumber: true })} />
+              <Input
+                id="away-red"
+                type="number"
+                min={0}
+                {...form.register('awayRedCards', { valueAsNumber: true })}
+              />
             </Field>
           </FieldGroup>
         </FieldSet>
@@ -171,5 +208,5 @@ export function PredictionForm({
         </Button>
       </FieldGroup>
     </form>
-  )
+  );
 }
