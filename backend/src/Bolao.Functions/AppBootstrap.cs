@@ -84,6 +84,7 @@ public static class AppBootstrap
         services.AddSingleton<IResultConfirmationStore>(provider => provider.GetRequiredService<E2EState>());
         services.AddSingleton<IConfirmedResultPublisher>(provider => provider.GetRequiredService<E2EState>());
         services.AddSingleton<IWinnerNotificationService>(provider => provider.GetRequiredService<E2EState>());
+        services.AddSingleton<ITeamEliminationStore>(provider => provider.GetRequiredService<E2EState>());
         services.AddSingleton<IRosterCatalog>(_ => new JsonRosterCatalog(RosterPath()));
         services.AddScoped<ManualResultRosterValidator>();
         services.AddScoped<PredictionService>();
@@ -117,6 +118,7 @@ public static class AppBootstrap
         services.AddScoped<IResultConfirmationStore, DynamoResultConfirmationStore>();
         services.AddScoped<IAdminApi, DynamoAdminApi>();
         services.AddScoped<IMatchManagementStore, DynamoMatchManagementStore>();
+        services.AddScoped<ITeamEliminationStore, DynamoTeamEliminationStore>();
         services.AddScoped<PredictionService>();
         services.AddScoped<ResultPublicationService>();
         services.AddScoped<IConfirmedResultPublisher, ConfirmedResultPublisher>();

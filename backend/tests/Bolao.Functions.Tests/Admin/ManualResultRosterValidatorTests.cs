@@ -36,6 +36,12 @@ public class ManualResultRosterValidatorTests
     {
         public List<string> RequestedTeams { get; } = [];
 
+        public async Task<IReadOnlyList<TeamRoster>> GetTeamsAsync(CancellationToken cancellationToken) =>
+            [
+                await GetTeamAsync("BRA", cancellationToken),
+                await GetTeamAsync("ARG", cancellationToken)
+            ];
+
         public Task<TeamRoster> GetTeamAsync(string fifaCode, CancellationToken cancellationToken)
         {
             RequestedTeams.Add(fifaCode);

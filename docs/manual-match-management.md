@@ -4,7 +4,9 @@ Administradores gerenciam jogos e resultados pela página `/admin`. Não há imp
 
 ## Criar e ativar jogos
 
-Use **Adicionar jogo** e informe um ID único, data e hora de início e as duas seleções. Os códigos FIFA devem existir em `assets/teams.json`.
+Use **Adicionar jogo**, informe a data e hora de início e escolha mandante e visitante nas listas de seleções. As listas vêm de `assets/teams.json`, que continua sendo a fonte dos códigos FIFA, nomes, bandeiras e jogadores. A seleção escolhida em um campo é removida das opções do outro.
+
+O backend gera o ID no formato `bra-nor-05-07`, combinando os códigos FIFA de mandante e visitante com o dia e o mês do início em `Europe/Berlin`. O ID não muda quando o jogo é editado. Se o ID gerado já existir, a criação falha com `409` e o código `match_exists`.
 
 - Se não houver jogo `Active`, o primeiro jogo criado fica `Active` imediatamente.
 - Se já houver um jogo `Active`, o novo jogo fica `Upcoming`.
@@ -15,6 +17,15 @@ Use **Adicionar jogo** e informe um ID único, data e hora de início e as duas 
 O sistema não muda status com base no relógio. A administração conduz o ciclo de vida pelas ações de criar e finalizar jogos; não há edição arbitrária de status.
 
 O ID identifica o jogo em palpites e resultados e, por isso, não pode ser alterado depois da criação. A ação **Editar jogo** permite corrigir somente a data e hora de início e as duas seleções. O status continua sendo controlado pelas ações de criar e finalizar.
+
+## Gerenciar seleções
+
+Use **Gerenciar seleções** para marcar uma seleção como eliminada ou restaurá-la. Esse estado fica no DynamoDB e não altera `assets/teams.json`.
+
+- Seleções eliminadas deixam de aparecer nas listas de novos jogos.
+- Ao editar, uma seleção eliminada continua disponível somente no lado em que já está atribuída.
+- Restaurar uma seleção a disponibiliza novamente para novos jogos.
+- Jogos existentes, resultados, palpites e histórico não são removidos nem alterados.
 
 ## Registrar e confirmar o resultado
 
@@ -41,8 +52,10 @@ Todas exigem um token de administrador:
 | Método e rota | Uso |
 | --- | --- |
 | `GET /admin/matches` | Lista os jogos e seus status. |
-| `POST /admin/matches` | Cria um jogo manualmente. |
+| `POST /admin/matches` | Cria um jogo manualmente e gera seu ID. |
 | `PUT /admin/matches/{matchId}` | Atualiza data, hora e seleções; o ID da rota permanece imutável. |
+| `GET /admin/teams` | Lista as seleções do roster e seu estado de eliminação. |
+| `PUT /admin/teams/{fifaCode}/elimination` | Marca uma seleção como eliminada ou a restaura. |
 | `GET /admin/matches/{matchId}/result` | Lê o rascunho manual do resultado. |
 | `PUT /admin/matches/{matchId}/result` | Salva gols ordenados, cartões e eventual vencedor nos pênaltis. |
 | `GET /admin/matches/{matchId}/provisional-leaderboard` | Calcula a classificação com o rascunho atual. |
@@ -56,7 +69,6 @@ curl -sS -i -X POST "$API_BASE_URL/admin/matches" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   --data '{
-    "id": "wc2026-bra-fra",
     "kickoff": "2026-07-01T18:00:00+02:00",
     "homeTeamFifaCode": "BRA",
     "awayTeamFifaCode": "FRA",
@@ -69,6 +81,7 @@ curl -sS -i -X POST "$API_BASE_URL/admin/matches" \
 Erros da API usam Problem Details e incluem um campo `code`. Os códigos relevantes são:
 
 - `invalid_match`, `match_exists` e `match_not_found` para cadastro e consulta;
+- `team_not_found` para gerenciamento de seleções;
 - `invalid_result` e `result_already_confirmed` para o rascunho e a confirmação;
 - `match_not_active`, `confirmed_result_required` e `match_lifecycle_conflict` para a finalização.
 

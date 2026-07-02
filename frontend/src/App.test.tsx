@@ -57,6 +57,7 @@ describe('App', () => {
       getAdminMatches: vi.fn().mockResolvedValue({
         matches: [],
       }),
+      getAdminTeams: vi.fn().mockResolvedValue([]),
     } as unknown as ApiClient
 
     renderAuthenticatedApp(vi.fn(), api)

@@ -17,5 +17,7 @@ public interface IRosterCatalog
         }
     }
 
+    Task<IReadOnlyList<TeamRoster>> GetTeamsAsync(CancellationToken cancellationToken);
+
     Task<TeamRoster> GetTeamAsync(string fifaCode, CancellationToken cancellationToken);
 }

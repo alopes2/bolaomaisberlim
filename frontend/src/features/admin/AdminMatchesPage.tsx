@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AdminApi,
   AdminMatch,
+  AdminTeam,
   CreateAdminMatchRequest,
   MatchStatus,
   UpdateAdminMatchRequest,
@@ -35,16 +36,14 @@ const statusLabels: Record<MatchStatus, string> = {
 }
 
 type ManualForm = {
-  id: string
   kickoff: string
   homeTeamFifaCode: string
   awayTeamFifaCode: string
 }
 
-type EditForm = Omit<ManualForm, 'id'>
+type EditForm = ManualForm
 
 const emptyForm: ManualForm = {
-  id: '',
   kickoff: '',
   homeTeamFifaCode: '',
   awayTeamFifaCode: '',
@@ -57,9 +56,15 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<EditForm | null>(null)
   const [editValidation, setEditValidation] = useState<string | null>(null)
+  const [pendingTeamCodes, setPendingTeamCodes] = useState(() => new Set<string>())
+  const [teamErrors, setTeamErrors] = useState(() => new Map<string, string>())
   const matchesQuery = useQuery({
     queryKey: ['admin-matches'],
     queryFn: () => api.getAdminMatches(),
+  })
+  const teamsQuery = useQuery({
+    queryKey: ['admin-teams'],
+    queryFn: () => api.getAdminTeams(),
   })
   const create = useMutation({
     mutationFn: (request: CreateAdminMatchRequest) => api.createAdminMatch(request),
@@ -88,6 +93,28 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
       void queryClient.invalidateQueries({ queryKey: ['current-match'] })
     },
   })
+  const updateTeam = useMutation({
+    mutationFn: ({ fifaCode, eliminated }: { fifaCode: string; eliminated: boolean }) =>
+      api.setTeamEliminated(fifaCode, eliminated),
+    onSuccess: (_, variables) => {
+      setTeamErrors(current => {
+        const next = new Map(current)
+        next.delete(variables.fifaCode)
+        return next
+      })
+      void queryClient.invalidateQueries({ queryKey: ['admin-teams'] })
+    },
+    onError: (error, variables) => {
+      setTeamErrors(current => new Map(current).set(variables.fifaCode, errorMessage(error)))
+    },
+    onSettled: (_, __, variables) => {
+      setPendingTeamCodes(current => {
+        const next = new Set(current)
+        next.delete(variables.fifaCode)
+        return next
+      })
+    },
+  })
 
   function setField(field: keyof ManualForm, value: string) {
     setForm(current => ({ ...current, [field]: value }))
@@ -95,7 +122,7 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!form.id.trim() || !form.kickoff
+    if (!form.kickoff
       || !form.homeTeamFifaCode.trim() || !form.awayTeamFifaCode.trim()) {
       setFormValidation('Preencha todos os campos obrigatórios.')
       return
@@ -110,7 +137,6 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
 
     setFormValidation(null)
     create.mutate({
-      id: form.id.trim(),
       kickoff,
       homeTeamFifaCode: form.homeTeamFifaCode.trim().toUpperCase(),
       awayTeamFifaCode: form.awayTeamFifaCode.trim().toUpperCase(),
@@ -163,11 +189,11 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
     })
   }
 
-  if (matchesQuery.isPending) {
+  if (matchesQuery.isPending || teamsQuery.isPending) {
     return <main className="mx-auto w-full max-w-3xl p-4 sm:p-8"><Skeleton className="h-96 w-full" /></main>
   }
-  if (matchesQuery.isError) {
-    return <main className="p-4 text-sm text-destructive" role="alert">Não foi possível carregar os jogos.</main>
+  if (matchesQuery.isError || teamsQuery.isError) {
+    return <main className="p-4 text-sm text-destructive" role="alert">Não foi possível carregar os jogos e as seleções.</main>
   }
 
   const sortedMatches = [...matchesQuery.data.matches].sort((left, right) =>
@@ -182,10 +208,9 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit} noValidate>
-            <Field label="ID do jogo" value={form.id} onChange={value => setField('id', value)} invalid={isInvalidField('id', form, formValidation)} />
             <Field label="Data e hora em Europe/Berlin" type="datetime-local" value={form.kickoff} onChange={value => setField('kickoff', value)} invalid={isInvalidField('kickoff', form, formValidation)} />
-            <Field label="Mandante" value={form.homeTeamFifaCode} onChange={value => setField('homeTeamFifaCode', value)} invalid={isInvalidField('homeTeamFifaCode', form, formValidation)} />
-            <Field label="Visitante" value={form.awayTeamFifaCode} onChange={value => setField('awayTeamFifaCode', value)} invalid={isInvalidField('awayTeamFifaCode', form, formValidation)} />
+            <TeamSelect label="Mandante" teams={teamsQuery.data} value={form.homeTeamFifaCode} excludedCode={form.awayTeamFifaCode} onChange={value => setField('homeTeamFifaCode', value)} invalid={isInvalidField('homeTeamFifaCode', form, formValidation)} />
+            <TeamSelect label="Visitante" teams={teamsQuery.data} value={form.awayTeamFifaCode} excludedCode={form.homeTeamFifaCode} onChange={value => setField('awayTeamFifaCode', value)} invalid={isInvalidField('awayTeamFifaCode', form, formValidation)} />
             <div className="flex flex-col items-start gap-2 sm:col-span-2">
               {formValidation ? <p id="manual-form-error" className="text-sm text-destructive" role="alert">{formValidation}</p> : null}
               {create.isError ? <p className="text-sm text-destructive" role="alert">{errorMessage(create.error)}</p> : null}
@@ -214,16 +239,22 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
                 invalid={Boolean(editValidation && (!editForm.kickoff || editValidation.includes('Europe/Berlin') || editValidation === 'Data e hora inválidas.'))}
                 errorId="edit-form-error"
               />
-              <Field
+              <TeamSelect
                 label="Mandante do jogo"
+                teams={teamsQuery.data}
                 value={editForm.homeTeamFifaCode}
+                excludedCode={editForm.awayTeamFifaCode}
+                includeCode={matchesQuery.data.matches.find(match => match.id === editingMatchId)?.homeTeamFifaCode}
                 onChange={value => setEditForm(current => current ? { ...current, homeTeamFifaCode: value } : current)}
                 invalid={Boolean(editValidation && !editForm.homeTeamFifaCode.trim())}
                 errorId="edit-form-error"
               />
-              <Field
+              <TeamSelect
                 label="Visitante do jogo"
+                teams={teamsQuery.data}
                 value={editForm.awayTeamFifaCode}
+                excludedCode={editForm.homeTeamFifaCode}
+                includeCode={matchesQuery.data.matches.find(match => match.id === editingMatchId)?.awayTeamFifaCode}
                 onChange={value => setEditForm(current => current ? { ...current, awayTeamFifaCode: value } : current)}
                 invalid={Boolean(editValidation && !editForm.awayTeamFifaCode.trim())}
                 errorId="edit-form-error"
@@ -244,6 +275,49 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
           </CardContent>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Gerenciar seleções</CardTitle>
+          <CardDescription>Remova seleções eliminadas das opções para novos jogos.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {teamErrors.size > 0 ? (
+            <div className="text-sm text-destructive" role="alert">
+              {[...teamErrors].map(([fifaCode, message]) => <p key={fifaCode}>{message}</p>)}
+            </div>
+          ) : null}
+          {teamsQuery.data.map(team => {
+            const isChanging = pendingTeamCodes.has(team.fifaCode)
+            return (
+              <div key={team.fifaCode} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>{team.flagIcon} {team.name} ({team.fifaCode})</span>
+                  {team.eliminated ? <Badge variant="secondary">Eliminada</Badge> : null}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isChanging}
+                  aria-label={team.eliminated ? `Restaurar ${team.name}` : `Marcar ${team.name} como eliminada`}
+                  onClick={() => {
+                    setPendingTeamCodes(current => new Set(current).add(team.fifaCode))
+                    setTeamErrors(current => {
+                      const next = new Map(current)
+                      next.delete(team.fifaCode)
+                      return next
+                    })
+                    updateTeam.mutate({ fifaCode: team.fifaCode, eliminated: !team.eliminated })
+                  }}
+                >
+                  {team.eliminated ? 'Restaurar' : 'Marcar eliminada'}
+                </Button>
+              </div>
+            )
+          })}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -345,6 +419,51 @@ function Field({
         aria-describedby={invalid ? errorId : undefined}
         onChange={event => onChange(event.target.value)}
       />
+    </div>
+  )
+}
+
+function TeamSelect({
+  label,
+  teams,
+  value,
+  excludedCode,
+  includeCode,
+  onChange,
+  invalid = false,
+  errorId = 'manual-form-error',
+}: {
+  label: string
+  teams: AdminTeam[]
+  value: string
+  excludedCode: string
+  includeCode?: string
+  onChange(value: string): void
+  invalid?: boolean
+  errorId?: string
+}) {
+  const id = label.toLowerCase().replaceAll(' ', '-')
+  const options = teams.filter(team =>
+    team.fifaCode !== excludedCode && (!team.eliminated || team.fifaCode === includeCode))
+
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={id}>{label}</Label>
+      <select
+        id={id}
+        className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm"
+        value={value}
+        aria-invalid={invalid}
+        aria-describedby={invalid ? errorId : undefined}
+        onChange={event => onChange(event.target.value)}
+      >
+        <option value="">Selecione uma seleção</option>
+        {options.map(team => (
+          <option key={team.fifaCode} value={team.fifaCode}>
+            {team.flagIcon} {team.name} ({team.fifaCode})
+          </option>
+        ))}
+      </select>
     </div>
   )
 }

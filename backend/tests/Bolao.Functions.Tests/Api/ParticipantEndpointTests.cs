@@ -286,6 +286,7 @@ public class ParticipantEndpointTests
                 services.RemoveAll<IRosterCatalog>();
                 services.RemoveAll<IAdminApi>();
                 services.RemoveAll<IMatchManagementStore>();
+                services.RemoveAll<ITeamEliminationStore>();
                 services.RemoveAll<IResultConfirmationStore>();
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<IApiQueries>(State);
@@ -295,6 +296,7 @@ public class ParticipantEndpointTests
                 services.AddSingleton<IRosterCatalog>(State);
                 services.AddSingleton<IAdminApi>(State);
                 services.AddSingleton<IMatchManagementStore>(State);
+                services.AddSingleton<ITeamEliminationStore>(State);
                 services.AddSingleton<IResultConfirmationStore>(State);
                 services.AddSingleton<TimeProvider>(State.Time);
             });
@@ -303,7 +305,7 @@ public class ParticipantEndpointTests
 
     internal class TestState(DateTimeOffset now)
         : IApiQueries, IUserProfileService, IMatchRepository, IPredictionRepository, IRosterCatalog,
-            IAdminApi, IMatchManagementStore, IResultConfirmationStore
+            IAdminApi, IMatchManagementStore, IResultConfirmationStore, ITeamEliminationStore
     {
         private readonly Match match = new("match-1", ApiFactory.Kickoff, "BRA", "ARG");
         private readonly StoredPrediction prediction =
@@ -315,7 +317,8 @@ public class ParticipantEndpointTests
         public ManagedMatch? CreatedManualMatch { get; private set; }
         public int RecalculationCount { get; private set; }
         public bool DuplicateManualMatch { get; set; }
-        public (string Id, AdminMatchRequest Request)? UpdatedMatch { get; private set; }
+        public (string Id, UpdateAdminMatchRequest Request)? UpdatedMatch { get; private set; }
+        public HashSet<string> EliminatedTeams { get; } = [];
         public ManualResultDraft? SavedResult { get; private set; }
         public MatchLifecycleResult FinishResult { get; set; } = new("active", null);
         public Exception? FinishFailure { get; set; }
@@ -385,16 +388,22 @@ public class ParticipantEndpointTests
 
         public Task<TeamRoster> GetTeamAsync(string fifaCode, CancellationToken cancellationToken)
         {
-            var keys = fifaCode == "BRA" ? new[] { "BRA:10" } : new[] { "ARG:9" };
+            var keys = fifaCode == "BRA" ? new[] { "BRA:10" } : new[] { $"{fifaCode}:9" };
             return Task.FromResult(new TeamRoster(
-                fifaCode,
-                fifaCode,
-                string.Empty,
+                fifaCode, fifaCode switch { "ARG" => "Argentina", "BRA" => "Brasil", "NOR" => "Noruega", _ => fifaCode },
+                $"{fifaCode}.png",
                 keys.Select(key => new Player(key, 10, "", key)).ToArray()));
         }
 
+        public async Task<IReadOnlyList<TeamRoster>> GetTeamsAsync(CancellationToken cancellationToken) =>
+            [
+                await GetTeamAsync("BRA", cancellationToken),
+                await GetTeamAsync("ARG", cancellationToken),
+                await GetTeamAsync("NOR", cancellationToken)
+            ];
+
         public Task<bool> ContainsTeamAsync(string fifaCode, CancellationToken cancellationToken) =>
-            Task.FromResult(fifaCode is "BRA" or "ARG");
+            Task.FromResult(fifaCode is "BRA" or "ARG" or "NOR");
 
         public Task<IReadOnlyList<ManagedMatch>> ListAsync(CancellationToken cancellationToken)
         {
@@ -425,10 +434,27 @@ public class ParticipantEndpointTests
 
         public Task UpdateMatchAsync(
             string matchId,
-            AdminMatchRequest request,
+            UpdateAdminMatchRequest request,
             CancellationToken cancellationToken)
         {
             UpdatedMatch = (matchId, request);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlySet<string>> GetEliminatedAsync(
+            IReadOnlyCollection<string> fifaCodes,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlySet<string>>(EliminatedTeams
+                .Where(fifaCodes.Contains)
+                .ToHashSet(StringComparer.Ordinal));
+
+        public Task SetEliminatedAsync(
+            string fifaCode,
+            bool eliminated,
+            CancellationToken cancellationToken)
+        {
+            if (eliminated) EliminatedTeams.Add(fifaCode);
+            else EliminatedTeams.Remove(fifaCode);
             return Task.CompletedTask;
         }
 

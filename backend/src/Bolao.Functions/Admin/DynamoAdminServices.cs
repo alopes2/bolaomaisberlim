@@ -16,7 +16,7 @@ public class DynamoAdminApi(
 {
     public async Task UpdateMatchAsync(
         string matchId,
-        AdminMatchRequest request,
+        UpdateAdminMatchRequest request,
         CancellationToken cancellationToken)
     {
         var updateExpression = "SET Kickoff = :kickoff, "

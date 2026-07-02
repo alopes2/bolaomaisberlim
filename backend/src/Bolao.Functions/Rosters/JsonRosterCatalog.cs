@@ -34,6 +34,18 @@ public class JsonRosterCatalog : IRosterCatalog
         var team = roster.FirstOrDefault(candidate => candidate.FifaCode == fifaCode)
             ?? throw new KeyNotFoundException($"Team '{fifaCode}' was not found.");
 
+        return ToRoster(team);
+    }
+
+    public async Task<IReadOnlyList<TeamRoster>> GetTeamsAsync(
+        CancellationToken cancellationToken)
+    {
+        var roster = await teams.Value.WaitAsync(cancellationToken);
+        return roster.Select(ToRoster).ToList();
+    }
+
+    private static TeamRoster ToRoster(JsonTeam team)
+    {
         return new TeamRoster(
             team.FifaCode,
             team.Name,

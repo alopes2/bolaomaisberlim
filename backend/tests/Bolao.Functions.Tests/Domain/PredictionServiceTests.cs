@@ -234,6 +234,9 @@ public class PredictionServiceTests
 
     private class StubRosterCatalog(params TeamRoster[] teams) : IRosterCatalog
     {
+        public Task<IReadOnlyList<TeamRoster>> GetTeamsAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<TeamRoster>>(teams);
+
         public Task<TeamRoster> GetTeamAsync(string fifaCode, CancellationToken cancellationToken)
         {
             return Task.FromResult(teams.Single(team => team.FifaCode == fifaCode));

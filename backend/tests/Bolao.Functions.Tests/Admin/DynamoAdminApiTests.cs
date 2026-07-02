@@ -25,8 +25,8 @@ public class DynamoAdminApiTests
 
         await service.UpdateMatchAsync(
             "archived",
-            new AdminMatchRequest(
-                "archived", DateTimeOffset.Parse("2026-07-10T18:00:00Z"), "BRA", "ARG",
+            new UpdateAdminMatchRequest(
+                DateTimeOffset.Parse("2026-07-10T18:00:00Z"), "BRA", "ARG",
                 DateTimeOffset.Parse("2026-07-11T18:00:00Z")),
             default);
 
@@ -116,6 +116,12 @@ public class DynamoAdminApiTests
 
     private class StubRosterCatalog : IRosterCatalog
     {
+        public async Task<IReadOnlyList<TeamRoster>> GetTeamsAsync(CancellationToken cancellationToken) =>
+            [
+                await GetTeamAsync("BRA", cancellationToken),
+                await GetTeamAsync("ARG", cancellationToken)
+            ];
+
         public Task<TeamRoster> GetTeamAsync(string fifaCode, CancellationToken cancellationToken)
         {
             var key = fifaCode == "BRA" ? "BRA:10" : "ARG:9";

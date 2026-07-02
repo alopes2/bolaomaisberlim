@@ -19,12 +19,20 @@ public record LeaderboardResponse(
     IReadOnlyList<LeaderboardEntry> Entries,
     RoundWinner? RoundWinner);
 
-public record AdminMatchRequest(
-    string Id,
+public record CreateAdminMatchRequest(
     DateTimeOffset Kickoff,
     string HomeTeamFifaCode,
     string AwayTeamFifaCode,
     DateTimeOffset? PrizeHandedOverAt = null);
+
+public record UpdateAdminMatchRequest(
+    DateTimeOffset Kickoff,
+    string HomeTeamFifaCode,
+    string AwayTeamFifaCode,
+    DateTimeOffset? PrizeHandedOverAt = null);
+
+public record AdminTeamResponse(string FifaCode, string Name, string FlagIcon, bool Eliminated);
+public record TeamEliminationRequest(bool Eliminated);
 
 public record AdminMatchResponse(
     string Id,

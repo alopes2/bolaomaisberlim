@@ -228,6 +228,12 @@ public class ResultConfirmationServiceTests
 
     private class StubRosterCatalog : IRosterCatalog
     {
+        public async Task<IReadOnlyList<TeamRoster>> GetTeamsAsync(CancellationToken cancellationToken) =>
+            [
+                await GetTeamAsync("BRA", cancellationToken),
+                await GetTeamAsync("ARG", cancellationToken)
+            ];
+
         public Task<TeamRoster> GetTeamAsync(string fifaCode, CancellationToken cancellationToken)
         {
             var key = fifaCode == "BRA" ? "BRA:10" : "ARG:9";

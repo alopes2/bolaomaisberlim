@@ -15,11 +15,13 @@ public class E2EState
         IMatchManagementStore,
         IResultConfirmationStore,
         IConfirmedResultPublisher,
-        IWinnerNotificationService
+        IWinnerNotificationService,
+        ITeamEliminationStore
 {
     private readonly Lock gate = new();
     private readonly Dictionary<string, string> publicNames = [];
     private readonly Dictionary<(string MatchId, string ParticipantId), StoredPrediction> predictions = [];
+    private readonly HashSet<string> eliminatedTeams = [];
     private Match match;
     private ConfirmedResult provisional = null!;
     private ManualResultDraft manualResult = null!;
@@ -40,6 +42,7 @@ public class E2EState
         {
             publicNames.Clear();
             predictions.Clear();
+            eliminatedTeams.Clear();
             resultVersion = 0;
             confirmedLeaderboard = new LeaderboardResponse([], null);
             match = match with { Kickoff = DateTimeOffset.UtcNow.AddMinutes(30) };
@@ -188,7 +191,7 @@ public class E2EState
 
     public Task UpdateMatchAsync(
         string matchId,
-        AdminMatchRequest request,
+        UpdateAdminMatchRequest request,
         CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task<ManualResultDraft?> GetResultAsync(string matchId, CancellationToken cancellationToken) =>
@@ -260,6 +263,34 @@ public class E2EState
         string matchId,
         int version,
         CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task<IReadOnlySet<string>> GetEliminatedAsync(
+        IReadOnlyCollection<string> fifaCodes,
+        CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            IReadOnlySet<string> result = eliminatedTeams
+                .Where(fifaCodes.Contains)
+                .ToHashSet(StringComparer.Ordinal);
+            return Task.FromResult(result);
+        }
+    }
+
+    public Task SetEliminatedAsync(
+        string fifaCode,
+        bool eliminated,
+        CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            if (eliminated)
+                eliminatedTeams.Add(fifaCode);
+            else
+                eliminatedTeams.Remove(fifaCode);
+        }
+        return Task.CompletedTask;
+    }
 }
 
 public class MutableE2ETimeProvider : TimeProvider

@@ -6,6 +6,7 @@ Este documento é um mapa curto do domínio. Os nomes em inglês correspondem ao
 
 - **Participant**: pessoa autenticada. O identificador interno é o `sub` do Cognito. Nome completo e e-mail são privados.
 - **Match**: jogo publicado, com seleções e horário oficial. O cutoff ocorre 10 minutos antes do início.
+- **Team elimination**: estado administrativo persistido no DynamoDB que remove uma seleção eliminada das opções de novos jogos sem alterar o roster ou o histórico.
 - **Prediction**: versão final do palpite de um participante para um jogo. Uma edição substitui a anterior e atualiza `SubmittedAt`.
 - **ManualResultDraft**: rascunho administrativo com gols ordenados, cartões e eventual vencedor nos pênaltis. A ordem determina o primeiro autor do gol e as contagens determinam placar e artilheiros.
 - **MatchResult**: snapshot confirmado e imutável derivado do `ManualResultDraft`.
@@ -60,13 +61,17 @@ Editar um palpite substitui o horário anterior para o desempate. O ranking púb
 
 ## Fluxo manual dos jogos
 
-1. O primeiro jogo criado fica `Active`; enquanto houver um ativo, novos jogos ficam `Upcoming`.
-2. Status não mudam automaticamente por horário. A administração conduz o ciclo de vida pelas ações manuais de criar e finalizar jogos.
-3. Um jogo ativo só pode ser finalizado depois que seu resultado foi confirmado e publicado.
-4. A finalização muda o atual para `Closed` e ativa o próximo `Upcoming` por horário e ID.
-5. Sem próximo jogo, não há jogo ativo; o próximo cadastro passa a ser `Active`.
+1. A administração escolhe mandante e visitante nas seleções suportadas por `assets/teams.json`; uma seleção não pode ocupar os dois lados.
+2. O backend gera um ID como `bra-nor-05-07` com os códigos FIFA e a data do início em `Europe/Berlin`. O ID é imutável, e uma colisão impede a criação.
+3. O primeiro jogo criado fica `Active`; enquanto houver um ativo, novos jogos ficam `Upcoming`.
+4. Status não mudam automaticamente por horário. A administração conduz o ciclo de vida pelas ações manuais de criar e finalizar jogos.
+5. Um jogo ativo só pode ser finalizado depois que seu resultado foi confirmado e publicado.
+6. A finalização muda o atual para `Closed` e ativa o próximo `Upcoming` por horário e ID.
+7. Sem próximo jogo, não há jogo ativo; o próximo cadastro passa a ser `Active`.
 
 Jogos e dados históricos não são apagados. Registros legados `Archived` continuam reconhecidos e visíveis, mas o fluxo manual atual não atribui esse status. O gerenciamento completo está em [manual-match-management.md](manual-match-management.md).
+
+`assets/teams.json` continua sendo a fonte de seleções e jogadores. A administração pode marcar uma seleção como eliminada ou restaurá-la; esse estado fica no DynamoDB. Seleções eliminadas não aparecem em novos cadastros, mas continuam nos jogos existentes e podem permanecer no lado já atribuído durante uma edição.
 
 ## Fluxo de retenção
 

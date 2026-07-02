@@ -72,7 +72,6 @@ describe('ApiClient', () => {
 
     await expect(api.getAdminMatches()).resolves.toEqual(matches)
     await expect(api.createAdminMatch({
-      id: 'wc2026-123',
       kickoff: '2026-07-01T18:00:00Z',
       homeTeamFifaCode: 'BRA',
       awayTeamFifaCode: 'ARG',
@@ -83,13 +82,89 @@ describe('ApiClient', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.example.com/admin/matches', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({
-        id: 'wc2026-123',
         kickoff: '2026-07-01T18:00:00Z',
         homeTeamFifaCode: 'BRA',
         awayTeamFifaCode: 'ARG',
         prizeHandedOverAt: null,
       }),
     }))
+  })
+
+  it('loads admin teams with authentication', async () => {
+    const teams = [{
+      fifaCode: 'BRA',
+      name: 'Brasil',
+      flagIcon: '🇧🇷',
+      eliminated: false,
+    }]
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(teams))
+    vi.stubGlobal('fetch', fetchMock)
+    const api = new ApiClient('https://api.example.com/', auth('admin-token'))
+
+    await expect(api.getAdminTeams()).resolves.toEqual(teams)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/admin/teams',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer admin-token' }),
+      }),
+    )
+  })
+
+  it('sets team elimination using an encoded FIFA code', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const api = new ApiClient('https://api.example.com', auth('admin-token'))
+
+    await expect(api.setTeamEliminated('BR/A', true)).resolves.toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/admin/teams/BR%2FA/elimination',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ eliminated: true }),
+        headers: expect.objectContaining({ Authorization: 'Bearer admin-token' }),
+      }),
+    )
+  })
+
+  it.each([
+    ['getAdminTeams', 'Não foi possível carregar os times.'],
+    ['setTeamEliminated', 'Não foi possível atualizar o time.'],
+  ] as const)('uses the fallback for non-JSON %s errors', async (method, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('gateway error', { status: 502 })))
+    const api = new ApiClient('https://api.example.com', auth('admin-token'))
+
+    const operation = method === 'getAdminTeams'
+      ? api.getAdminTeams()
+      : api.setTeamEliminated('BRA', true)
+
+    await expect(operation).rejects.toThrow(message)
+  })
+
+  it('maps the team not found problem without exposing its detail', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(
+      { code: 'team_not_found', detail: 'Sensitive backend detail.' },
+      { status: 404 },
+    )))
+    const api = new ApiClient('https://api.example.com', auth('admin-token'))
+
+    await expect(api.setTeamEliminated('XXX', true)).rejects.toThrow('Time não encontrado.')
+  })
+
+  it.each([
+    ['getAdminTeams', 'Não foi possível carregar os times.'],
+    ['setTeamEliminated', 'Não foi possível atualizar o time.'],
+  ] as const)('does not expose unknown problem details from %s', async (method, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(
+      { code: 'unknown_team_error', detail: 'Sensitive backend detail.' },
+      { status: 400 },
+    )))
+    const api = new ApiClient('https://api.example.com', auth('admin-token'))
+
+    const operation = method === 'getAdminTeams'
+      ? api.getAdminTeams()
+      : api.setTeamEliminated('BRA', true)
+
+    await expect(operation).rejects.toThrow(message)
   })
 
   it('updates editable match data without sending a replacement ID', async () => {
@@ -201,7 +276,6 @@ describe('ApiClient', () => {
     const api = new ApiClient('https://api.example.com', auth('admin-token'))
 
     await expect(api.createAdminMatch({
-      id: 'wc2026-123',
       kickoff: '2026-07-01T18:00:00Z',
       homeTeamFifaCode: 'BRA',
       awayTeamFifaCode: 'ARG',

@@ -6,6 +6,42 @@ namespace Bolao.Functions.Tests.Rosters;
 public class JsonRosterCatalogTests
 {
     [Fact]
+    public async Task ReturnsAllTeamsInSourceOrder()
+    {
+        const string json = """
+            [
+              {
+                "fifa_code": "BRA",
+                "name": "Brasil",
+                "flag_icon": "🇧🇷",
+                "players": [
+                  { "number": 10, "pos": "MF", "name": "Raphinha" }
+                ]
+              },
+              {
+                "fifa_code": "NOR",
+                "name": "Noruega",
+                "flag_icon": "🇳🇴",
+                "players": [
+                  { "number": 9, "pos": "FW", "name": "Haaland" }
+                ]
+              }
+            ]
+            """;
+        var catalog = new JsonRosterCatalog(() =>
+            new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)));
+
+        var teams = await catalog.GetTeamsAsync(CancellationToken.None);
+
+        teams.Should().BeEquivalentTo(
+            [
+                new TeamRoster("BRA", "Brasil", "🇧🇷", [new Player("BRA:10", 10, "MF", "Raphinha")]),
+                new TeamRoster("NOR", "Noruega", "🇳🇴", [new Player("NOR:9", 9, "FW", "Haaland")])
+            ],
+            options => options.WithStrictOrdering());
+    }
+
+    [Fact]
     public async Task LoadsBrazilAndBuildsStablePlayerKeys()
     {
         var catalog = new JsonRosterCatalog("assets/teams.json");

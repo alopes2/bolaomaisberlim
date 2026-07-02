@@ -28,14 +28,25 @@ export type AdminMatchesResponse = {
 };
 
 export type CreateAdminMatchRequest = {
-  id: string;
   kickoff: string;
   homeTeamFifaCode: string;
   awayTeamFifaCode: string;
   prizeHandedOverAt: string | null;
 };
 
-export type UpdateAdminMatchRequest = Omit<CreateAdminMatchRequest, 'id'>;
+export type UpdateAdminMatchRequest = {
+  kickoff: string;
+  homeTeamFifaCode: string;
+  awayTeamFifaCode: string;
+  prizeHandedOverAt: string | null;
+};
+
+export type AdminTeam = {
+  fifaCode: string;
+  name: string;
+  flagIcon: string;
+  eliminated: boolean;
+};
 
 export type PredictionAnswers = {
   homeGoals: number;
@@ -113,6 +124,8 @@ export type FinishMatchResponse = {
 
 export interface AdminApi {
   getAdminMatches(): Promise<AdminMatchesResponse>;
+  getAdminTeams(): Promise<AdminTeam[]>;
+  setTeamEliminated(fifaCode: string, eliminated: boolean): Promise<void>;
   createAdminMatch(request: CreateAdminMatchRequest): Promise<void>;
   updateAdminMatch(matchId: string, request: UpdateAdminMatchRequest): Promise<void>;
   getAdminResult(matchId: string): Promise<ManualResultDraft>;
@@ -231,6 +244,27 @@ export class ApiClient implements ProfileApi, AdminApi {
     return (await response.json()) as AdminMatchesResponse;
   }
 
+  async getAdminTeams() {
+    const response = await this.authorizedFetch('/admin/teams');
+    if (!response.ok) {
+      throw await apiError(response, 'Não foi possível carregar os times.');
+    }
+    return (await response.json()) as AdminTeam[];
+  }
+
+  async setTeamEliminated(fifaCode: string, eliminated: boolean) {
+    const response = await this.authorizedFetch(
+      `/admin/teams/${encodeURIComponent(fifaCode)}/elimination`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ eliminated }),
+      },
+    );
+    if (!response.ok) {
+      throw await apiError(response, 'Não foi possível atualizar o time.');
+    }
+  }
+
   async createAdminMatch(request: CreateAdminMatchRequest) {
     const response = await this.authorizedFetch('/admin/matches', {
       method: 'POST',
@@ -330,4 +364,5 @@ const adminProblemMessages: Record<string, string> = {
   confirmed_result_required: 'Confirme o resultado antes de finalizar o jogo.',
   match_lifecycle_conflict: 'Outro jogo foi alterado ao mesmo tempo. Atualize a página e tente novamente.',
   match_not_found: 'Jogo não encontrado.',
+  team_not_found: 'Time não encontrado.',
 };

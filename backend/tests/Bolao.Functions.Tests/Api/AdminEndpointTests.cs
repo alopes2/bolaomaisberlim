@@ -10,6 +10,13 @@ namespace Bolao.Functions.Tests.Api;
 
 public class AdminEndpointTests
 {
+    [Fact]
+    public void MatchIdGeneratorNormalizesCodesAndUsesBerlinCalendarDate()
+    {
+        MatchIdGenerator.Generate(" BRA ", " NoR ", DateTimeOffset.Parse("2026-07-04T22:30:00Z"))
+            .Should().Be("bra-nor-05-07");
+    }
+
     public static TheoryData<string, string> Routes => new()
     {
         { "POST", "/admin/matches" },
@@ -19,7 +26,9 @@ public class AdminEndpointTests
         { "PUT", "/admin/matches/match-1/result" },
         { "GET", "/admin/matches/match-1/provisional-leaderboard" },
         { "POST", "/admin/matches/match-1/confirm" },
-        { "POST", "/admin/matches/match-1/finish" }
+        { "POST", "/admin/matches/match-1/finish" },
+        { "GET", "/admin/teams" },
+        { "PUT", "/admin/teams/BRA/elimination" }
     };
 
     [Theory]
@@ -47,17 +56,144 @@ public class AdminEndpointTests
     }
 
     [Fact]
-    public async Task CreateNormalizesInputAndDelegatesActivationToStore()
+    public async Task CreateGeneratesIdFromTeamsAndBerlinKickoffDate()
     {
         await using var factory = new ParticipantEndpointTests.ApiFactory();
-        var request = new AdminMatchRequest(
-            " manual_1 ", DateTimeOffset.Parse("2026-07-10T18:00:00Z"), " bra ", " arg ");
+        var request = new CreateAdminMatchRequest(
+            DateTimeOffset.Parse("2026-07-04T22:30:00Z"), " bra ", " nor ");
 
         var response = await AdminClient(factory).PostAsJsonAsync("/admin/matches", request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        response.Headers.Location!.OriginalString.Should().Be("/admin/matches/manual_1");
-        factory.State.CreatedManualMatch!.Id.Should().Be("manual_1");
+        response.Headers.Location!.OriginalString.Should().Be("/admin/matches/bra-nor-05-07");
+        factory.State.CreatedManualMatch!.Id.Should().Be("bra-nor-05-07");
+    }
+
+    [Fact]
+    public async Task CreateRejectsIdenticalTeams()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+
+        var response = await AdminClient(factory).PostAsJsonAsync("/admin/matches",
+            new CreateAdminMatchRequest(ParticipantEndpointTests.ApiFactory.Kickoff, " bra ", "BRA"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task CreateRejectsEliminatedTeam()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+        factory.State.EliminatedTeams.Add("ARG");
+
+        var response = await AdminClient(factory).PostAsJsonAsync("/admin/matches",
+            new CreateAdminMatchRequest(ParticipantEndpointTests.ApiFactory.Kickoff, "BRA", "ARG"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertCode(response, "invalid_match");
+    }
+
+    [Fact]
+    public async Task CreateCollisionKeepsStableConflict()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+        factory.State.DuplicateManualMatch = true;
+
+        var response = await AdminClient(factory).PostAsJsonAsync("/admin/matches",
+            new CreateAdminMatchRequest(ParticipantEndpointTests.ApiFactory.Kickoff, "BRA", "ARG"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await AssertCode(response, "match_exists");
+    }
+
+    [Fact]
+    public async Task UpdateAllowsExistingEliminatedTeam()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+        factory.State.EliminatedTeams.Add("BRA");
+
+        var response = await AdminClient(factory).PutAsJsonAsync("/admin/matches/active",
+            new UpdateAdminMatchRequest(ParticipantEndpointTests.ApiFactory.Kickoff, "BRA", "NOR"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task UpdateRejectsReplacementWithEliminatedTeam()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+        factory.State.EliminatedTeams.Add("NOR");
+
+        var response = await AdminClient(factory).PutAsJsonAsync("/admin/matches/active",
+            new UpdateAdminMatchRequest(ParticipantEndpointTests.ApiFactory.Kickoff, "BRA", "NOR"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertCode(response, "invalid_match");
+    }
+
+    [Fact]
+    public async Task UpdateRejectsMovingEliminatedAwayTeamToHome()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+        factory.State.EliminatedTeams.Add("ARG");
+
+        var response = await AdminClient(factory).PutAsJsonAsync("/admin/matches/active",
+            new UpdateAdminMatchRequest(ParticipantEndpointTests.ApiFactory.Kickoff, "ARG", "NOR"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertCode(response, "invalid_match");
+    }
+
+    [Fact]
+    public async Task UpdateRejectsMovingEliminatedHomeTeamToAway()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+        factory.State.EliminatedTeams.Add("BRA");
+
+        var response = await AdminClient(factory).PutAsJsonAsync("/admin/matches/active",
+            new UpdateAdminMatchRequest(ParticipantEndpointTests.ApiFactory.Kickoff, "NOR", "BRA"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await AssertCode(response, "invalid_match");
+    }
+
+    [Fact]
+    public async Task AdminListsTeamsOrderedByNameWithEliminationState()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+        factory.State.EliminatedTeams.Add("ARG");
+
+        var teams = (await AdminClient(factory).GetFromJsonAsync<AdminTeamResponse[]>("/admin/teams"))!;
+
+        teams.Select(team => team.FifaCode).Should().Equal("ARG", "BRA", "NOR");
+        teams.Single(team => team.FifaCode == "ARG").FlagIcon.Should().Be("ARG.png");
+        teams.Single(team => team.FifaCode == "ARG").Eliminated.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AdminSetsNormalizedTeamElimination(bool eliminated)
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+
+        var response = await AdminClient(factory).PutAsJsonAsync(
+            "/admin/teams/%20bra%20/elimination", new TeamEliminationRequest(eliminated));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        factory.State.EliminatedTeams.Contains("BRA").Should().Be(eliminated);
+    }
+
+    [Fact]
+    public async Task EliminatingUnknownTeamReturnsNotFound()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+
+        var response = await AdminClient(factory).PutAsJsonAsync(
+            "/admin/teams/XXX/elimination", new TeamEliminationRequest(true));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await AssertCode(response, "team_not_found");
     }
 
     [Fact]
@@ -211,4 +347,8 @@ public class AdminEndpointTests
         client.DefaultRequestHeaders.Add("X-Test-Is-Admin", "true");
         return client;
     }
+
+    private static async Task AssertCode(HttpResponseMessage response, string code) =>
+        JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement
+            .GetProperty("code").GetString().Should().Be(code);
 }

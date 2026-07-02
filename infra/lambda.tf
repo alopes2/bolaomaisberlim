@@ -27,6 +27,7 @@ locals {
   table_arns = [for table in aws_dynamodb_table.this : table.arn]
   lambda_actions = {
     api = [
+      "dynamodb:BatchGetItem",
       "dynamodb:DeleteItem",
       "dynamodb:GetItem",
       "dynamodb:PutItem",

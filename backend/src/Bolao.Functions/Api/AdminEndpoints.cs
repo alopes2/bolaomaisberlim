@@ -24,51 +24,90 @@ public static class AdminEndpoints
         });
 
         admin.MapPost("/matches", async (
-            AdminMatchRequest request,
+            CreateAdminMatchRequest request,
             IMatchManagementStore matches,
             IRosterCatalog rosters,
+            ITeamEliminationStore eliminations,
             CancellationToken cancellationToken) =>
         {
             var normalized = Normalize(request);
-            var validation = await ValidateAsync(normalized, rosters, cancellationToken);
+            var validation = await ValidateCreateAsync(normalized, rosters, eliminations, cancellationToken);
             if (validation is not null) return validation;
+            var matchId = MatchIdGenerator.Generate(
+                normalized.HomeTeamFifaCode, normalized.AwayTeamFifaCode, normalized.Kickoff);
             try
             {
                 var created = await matches.CreateManualAsync(new ManagedMatch(
-                    normalized.Id,
+                    matchId,
                     normalized.Kickoff,
                     normalized.HomeTeamFifaCode,
                     normalized.AwayTeamFifaCode,
                     MatchStatus.Upcoming), cancellationToken);
                 return Results.Created(
-                    $"/admin/matches/{Uri.EscapeDataString(normalized.Id)}",
+                    $"/admin/matches/{Uri.EscapeDataString(matchId)}",
                     ToResponse(created));
             }
             catch (ConditionalCheckFailedException)
             {
-                return Problem(StatusCodes.Status409Conflict, "match_exists", $"Match '{normalized.Id}' already exists.");
+                return Problem(StatusCodes.Status409Conflict, "match_exists", $"Match '{matchId}' already exists.");
             }
         });
 
         admin.MapPut("/matches/{matchId}", async (
             string matchId,
-            AdminMatchRequest request,
+            UpdateAdminMatchRequest request,
             IAdminApi service,
+            IMatchManagementStore matches,
             IRosterCatalog rosters,
+            ITeamEliminationStore eliminations,
             CancellationToken cancellationToken) =>
         {
-            var normalized = Normalize(request, matchId);
-            var validation = await ValidateAsync(normalized, rosters, cancellationToken);
+            var normalized = Normalize(request);
+            var existing = (await matches.ListAsync(cancellationToken))
+                .SingleOrDefault(match => string.Equals(match.Id, matchId, StringComparison.Ordinal));
+            if (existing is null)
+                return Problem(StatusCodes.Status404NotFound, "match_not_found", $"Match '{matchId}' was not found.");
+            var validation = await ValidateUpdateAsync(normalized, existing, rosters, eliminations, cancellationToken);
             if (validation is not null) return validation;
             try
             {
-                await service.UpdateMatchAsync(normalized.Id, normalized, cancellationToken);
+                await service.UpdateMatchAsync(matchId, normalized, cancellationToken);
                 return Results.NoContent();
             }
             catch (ConditionalCheckFailedException)
             {
-                return Problem(StatusCodes.Status404NotFound, "match_not_found", $"Match '{normalized.Id}' was not found.");
+                return Problem(StatusCodes.Status404NotFound, "match_not_found", $"Match '{matchId}' was not found.");
             }
+        });
+
+        admin.MapGet("/teams", async (
+            IRosterCatalog rosters,
+            ITeamEliminationStore eliminations,
+            CancellationToken cancellationToken) =>
+        {
+            var teams = await rosters.GetTeamsAsync(cancellationToken);
+            var codes = teams.Select(team => team.FifaCode).ToArray();
+            var eliminated = await eliminations.GetEliminatedAsync(codes, cancellationToken);
+            return Results.Ok(teams
+                .Select(team => new AdminTeamResponse(
+                    team.FifaCode, team.Name, team.FlagIcon, eliminated.Contains(team.FifaCode)))
+                .OrderBy(team => team.Name, StringComparer.Ordinal)
+                .ThenBy(team => team.FifaCode, StringComparer.Ordinal)
+                .ToArray());
+        });
+
+        admin.MapPut("/teams/{fifaCode}/elimination", async (
+            string fifaCode,
+            TeamEliminationRequest request,
+            IRosterCatalog rosters,
+            ITeamEliminationStore eliminations,
+            CancellationToken cancellationToken) =>
+        {
+            var normalizedCode = NormalizeCode(fifaCode);
+            if (!await rosters.ContainsTeamAsync(normalizedCode, cancellationToken))
+                return Problem(StatusCodes.Status404NotFound, "team_not_found", $"Team '{normalizedCode}' was not found.");
+            await eliminations.SetEliminatedAsync(normalizedCode, request.Eliminated, cancellationToken);
+            return Results.NoContent();
         });
 
         admin.MapGet("/matches/{matchId}/result", async (
@@ -194,31 +233,73 @@ public static class AdminEndpoints
 
     private static ManualResultDraft EmptyResult() => new([], 0, 0, 0, 0, null);
 
-    private static async Task<IResult?> ValidateAsync(
-        AdminMatchRequest request,
+    private static async Task<IResult?> ValidateCreateAsync(
+        CreateAdminMatchRequest request,
+        IRosterCatalog rosters,
+        ITeamEliminationStore eliminations,
+        CancellationToken cancellationToken)
+    {
+        var validation = await ValidateTeamsAsync(request.Kickoff, request.HomeTeamFifaCode,
+            request.AwayTeamFifaCode, rosters, cancellationToken);
+        if (validation is not null) return validation;
+        var eliminated = await eliminations.GetEliminatedAsync(
+            [request.HomeTeamFifaCode, request.AwayTeamFifaCode], cancellationToken);
+        if (eliminated.Count > 0)
+            return Problem(StatusCodes.Status400BadRequest, "invalid_match", "Eliminated teams cannot be assigned to a new match.");
+        return null;
+    }
+
+    private static async Task<IResult?> ValidateUpdateAsync(
+        UpdateAdminMatchRequest request,
+        ManagedMatch existing,
+        IRosterCatalog rosters,
+        ITeamEliminationStore eliminations,
+        CancellationToken cancellationToken)
+    {
+        var validation = await ValidateTeamsAsync(request.Kickoff, request.HomeTeamFifaCode,
+            request.AwayTeamFifaCode, rosters, cancellationToken);
+        if (validation is not null) return validation;
+        var eliminated = await eliminations.GetEliminatedAsync(
+            [request.HomeTeamFifaCode, request.AwayTeamFifaCode], cancellationToken);
+        if ((eliminated.Contains(request.HomeTeamFifaCode)
+                && request.HomeTeamFifaCode != existing.HomeTeamFifaCode)
+            || (eliminated.Contains(request.AwayTeamFifaCode)
+                && request.AwayTeamFifaCode != existing.AwayTeamFifaCode))
+            return Problem(StatusCodes.Status400BadRequest, "invalid_match", "A newly assigned team cannot be eliminated.");
+        return null;
+    }
+
+    private static async Task<IResult?> ValidateTeamsAsync(
+        DateTimeOffset kickoff,
+        string homeTeamFifaCode,
+        string awayTeamFifaCode,
         IRosterCatalog rosters,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Id))
-            return Problem(StatusCodes.Status400BadRequest, "invalid_match", "Match ID is required.");
-        if (request.Id.Length > 58)
-            return Problem(StatusCodes.Status400BadRequest, "invalid_match", "Match ID must be at most 58 characters.");
-        if (!request.Id.All(character => character is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '_' or '-'))
-            return Problem(StatusCodes.Status400BadRequest, "invalid_match", "Match ID may contain only letters, numbers, underscores, and hyphens.");
-        if (request.Kickoff == default)
+        if (kickoff == default)
             return Problem(StatusCodes.Status400BadRequest, "invalid_match", "Kickoff is required.");
-        if (!await rosters.ContainsTeamAsync(request.HomeTeamFifaCode, cancellationToken)
-            || !await rosters.ContainsTeamAsync(request.AwayTeamFifaCode, cancellationToken))
+        if (string.Equals(homeTeamFifaCode, awayTeamFifaCode, StringComparison.Ordinal))
+            return Problem(StatusCodes.Status400BadRequest, "invalid_match", "Home and away teams must be different.");
+        if (!await rosters.ContainsTeamAsync(homeTeamFifaCode, cancellationToken)
+            || !await rosters.ContainsTeamAsync(awayTeamFifaCode, cancellationToken))
             return Problem(StatusCodes.Status400BadRequest, "invalid_match", "Both team codes must be supported.");
         return null;
     }
 
-    private static AdminMatchRequest Normalize(AdminMatchRequest request, string? authoritativeId = null) => request with
+    private static CreateAdminMatchRequest Normalize(CreateAdminMatchRequest request) => request with
     {
-        Id = (authoritativeId ?? request.Id)?.Trim() ?? string.Empty,
-        HomeTeamFifaCode = request.HomeTeamFifaCode?.Trim().ToUpperInvariant() ?? string.Empty,
-        AwayTeamFifaCode = request.AwayTeamFifaCode?.Trim().ToUpperInvariant() ?? string.Empty
+        HomeTeamFifaCode = NormalizeCode(request.HomeTeamFifaCode),
+        AwayTeamFifaCode = NormalizeCode(request.AwayTeamFifaCode)
     };
+
+    private static UpdateAdminMatchRequest Normalize(UpdateAdminMatchRequest request) => request with
+    {
+        HomeTeamFifaCode = NormalizeCode(request.HomeTeamFifaCode),
+        AwayTeamFifaCode = NormalizeCode(request.AwayTeamFifaCode)
+    };
+
+    private static string NormalizeCode(string? fifaCode) =>
+        fifaCode?.Trim().ToUpperInvariant() ?? string.Empty;
 
     private static IResult Problem(int status, string code, string detail) => Results.Problem(
         detail: detail,
