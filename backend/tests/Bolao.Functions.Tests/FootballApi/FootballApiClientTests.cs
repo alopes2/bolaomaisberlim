@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Bolao.Functions.FootballApi;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace Bolao.Functions.Tests.FootballApi;
 
@@ -59,6 +60,7 @@ public class FootballApiClientTests
         var client = new FootballApiClient(
             new HttpClient(handler),
             new ApiQuotaGuard(repository, limit: 80, reserve: 20),
+            new RecordingLogger<FootballApiClient>(),
             "test-key");
 
         var fixtures = await client.GetWorldCupFixturesAsync(2026, default);
@@ -87,11 +89,33 @@ public class FootballApiClientTests
         await act.Should().ThrowAsync<InvalidDataException>();
     }
 
-    private static FootballApiClient CreateClient(HttpMessageHandler handler)
+    [Fact]
+    public async Task LogsHttpFailureWithExceptionAndRequestContext()
+    {
+        var exception = new HttpRequestException("provider unavailable");
+        var logger = new RecordingLogger<FootballApiClient>();
+        var client = CreateClient(new ThrowingHandler(exception), logger);
+
+        var act = () => client.GetWorldCupFixturesAsync(2026, default);
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+        logger.Entries.Should().ContainSingle(entry =>
+            entry.Level == LogLevel.Error
+            && entry.Exception == exception
+            && entry.Message.Contains("World Cup fixtures for season 2026"));
+    }
+
+    private static FootballApiClient CreateClient(
+        HttpMessageHandler handler,
+        ILogger<FootballApiClient>? logger = null)
     {
         var repository = new InMemoryQuotaRepository();
         var guard = new ApiQuotaGuard(repository, limit: 80, reserve: 20);
-        return new FootballApiClient(new HttpClient(handler), guard, "test-key");
+        return new FootballApiClient(
+            new HttpClient(handler),
+            guard,
+            logger ?? new RecordingLogger<FootballApiClient>(),
+            "test-key");
     }
 
     private static string FixtureJson(string status) => $$"""
@@ -178,5 +202,29 @@ public class FootballApiClientTests
             response.Headers.Add("x-ratelimit-requests-remaining", "99");
             return Task.FromResult(response);
         }
+    }
+
+    private sealed class ThrowingHandler(Exception exception) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) => Task.FromException<HttpResponseMessage>(exception);
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, Exception? Exception, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, exception, formatter(state, exception)));
     }
 }

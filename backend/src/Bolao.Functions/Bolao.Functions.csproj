@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Amazon.Lambda.AspNetCoreServer" Version="10.1.1" />
+    <PackageReference Include="Amazon.Lambda.Logging.AspNetCore" Version="5.0.0" />
     <PackageReference Include="AWSSDK.CognitoIdentityProvider" Version="4.0.10.1" />
     <PackageReference Include="AWSSDK.DynamoDBv2" Version="4.0.21.7" />
     <PackageReference Include="AWSSDK.Scheduler" Version="4.0.3.10" />

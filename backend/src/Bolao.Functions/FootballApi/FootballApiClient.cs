@@ -7,83 +7,120 @@ public class FootballApiClient : IFootballApiClient
 {
     private const string ProviderLimitHeader = "x-ratelimit-requests-limit";
     private const string ProviderRemainingHeader = "x-ratelimit-requests-remaining";
-    private readonly HttpClient httpClient;
-    private readonly ApiQuotaGuard quotaGuard;
-    private readonly string apiKey;
+    private readonly HttpClient _httpClient;
+    private readonly ApiQuotaGuard _quotaGuard;
+    private readonly string _apiKey;
+    private readonly ILogger<FootballApiClient> _logger;
 
     public FootballApiClient(
         HttpClient httpClient,
         ApiQuotaGuard quotaGuard,
+        ILogger<FootballApiClient> logger,
         string? apiKey = null)
     {
-        this.httpClient = httpClient;
-        this.quotaGuard = quotaGuard;
-        this.apiKey = apiKey ?? Environment.GetEnvironmentVariable("FOOTBALL_API_KEY")
+        _httpClient = httpClient;
+        _quotaGuard = quotaGuard;
+        _logger = logger;
+        _apiKey = apiKey ?? Environment.GetEnvironmentVariable("FOOTBALL_API_KEY")
             ?? throw new InvalidOperationException("FOOTBALL_API_KEY is required.");
 
-        if (string.IsNullOrWhiteSpace(this.apiKey))
+        if (string.IsNullOrWhiteSpace(_apiKey))
         {
             throw new InvalidOperationException("FOOTBALL_API_KEY is required.");
         }
 
-        this.httpClient.BaseAddress ??= new Uri("https://v3.football.api-sports.io/");
-        this.httpClient.Timeout = TimeSpan.FromSeconds(10);
+        _httpClient.BaseAddress ??= new Uri("https://v3.football.api-sports.io/");
+        _httpClient.Timeout = TimeSpan.FromSeconds(10);
     }
 
     public async Task<FootballFixture> GetFixtureAsync(
         long fixtureId,
         CancellationToken cancellationToken)
     {
-        await quotaGuard.ReserveAsync(cancellationToken);
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"fixtures?id={fixtureId}");
-        request.Headers.Add("x-apisports-key", apiKey);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-
-        await RecordProviderQuotaAsync(response.Headers, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        var entries = document.RootElement.GetProperty("response");
-        if (entries.GetArrayLength() != 1)
+        try
         {
-            throw new InvalidDataException($"API-Football returned {entries.GetArrayLength()} fixtures for id {fixtureId}.");
-        }
+            await _quotaGuard.ReserveAsync(cancellationToken);
 
-        return MapFixture(entries[0]);
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"fixtures?id={fixtureId}");
+            request.Headers.Add("x-apisports-key", _apiKey);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+            await RecordProviderQuotaAsync(response.Headers, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var entries = document.RootElement.GetProperty("response");
+            if (entries.GetArrayLength() != 1)
+            {
+                throw new InvalidDataException($"API-Football returned {entries.GetArrayLength()} fixtures for id {fixtureId}.");
+            }
+
+            return MapFixture(entries[0]);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "API-Football request failed for fixture {FixtureId}",
+                fixtureId);
+            throw;
+        }
     }
 
     public async Task<IReadOnlyList<FootballFixtureSummary>> GetWorldCupFixturesAsync(
         int season,
         CancellationToken cancellationToken)
     {
-        await quotaGuard.ReserveAsync(cancellationToken);
-
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"fixtures?league=1&season={season}&timezone=Europe%2FBerlin");
-        request.Headers.Add("x-apisports-key", apiKey);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-
-        await RecordProviderQuotaAsync(response.Headers, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        var root = document.RootElement;
-        if (root.TryGetProperty("errors", out var errors) && HasProviderErrors(errors))
+        try
         {
-            throw new InvalidDataException("API-Football returned errors for the World Cup fixture list.");
-        }
+            await _quotaGuard.ReserveAsync(cancellationToken);
 
-        var entries = root.GetProperty("response");
-        if (entries.GetArrayLength() == 0)
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"fixtures?league=1&season={season}&timezone=Europe%2FBerlin");
+            request.Headers.Add("x-apisports-key", _apiKey);
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+            await RecordProviderQuotaAsync(response.Headers, cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var root = document.RootElement;
+            if (root.TryGetProperty("errors", out var errors) && HasProviderErrors(errors))
+            {
+                _logger.LogError(
+                    "API-Football request returned errors: {Errors}",
+                    JsonSerializer.Serialize(errors));
+                throw new InvalidDataException(
+                    $"API-Football returned errors for the World Cup fixture list: {errors}");
+            }
+
+            var entries = root.GetProperty("response");
+            if (entries.GetArrayLength() == 0)
+            {
+                throw new InvalidDataException("API-Football returned no World Cup fixtures.");
+            }
+
+            return entries.EnumerateArray().Select(MapFixtureSummary).ToArray();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            throw new InvalidDataException("API-Football returned no World Cup fixtures.");
+            throw;
         }
-
-        return entries.EnumerateArray().Select(MapFixtureSummary).ToArray();
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "API-Football request failed for World Cup fixtures for season {Season}",
+                season);
+            throw;
+        }
     }
 
     private static bool HasProviderErrors(JsonElement errors) => errors.ValueKind switch
@@ -102,7 +139,7 @@ public class FootballApiClient : IFootballApiClient
         if (TryReadHeader(headers, ProviderLimitHeader, out var limit)
             && TryReadHeader(headers, ProviderRemainingHeader, out var remaining))
         {
-            await quotaGuard.RecordProviderQuotaAsync(limit, remaining, cancellationToken);
+            await _quotaGuard.RecordProviderQuotaAsync(limit, remaining, cancellationToken);
         }
     }
 

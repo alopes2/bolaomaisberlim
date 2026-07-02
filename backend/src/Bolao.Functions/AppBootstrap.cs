@@ -21,6 +21,10 @@ public static class AppBootstrap
     public static void ConfigureServices(IServiceCollection services, IWebHostEnvironment environment)
     {
         E2EMode.EnsureSafe(environment.EnvironmentName, Environment.GetEnvironmentVariable("AWS_EXECUTION_ENV"));
+        services.AddLogging(logging => logging.AddLambdaLogger(new LambdaLoggerOptions
+        {
+            IncludeException = true
+        }));
         services.AddAuthentication("Gateway")
             .AddScheme<AuthenticationSchemeOptions, GatewayAuthenticationHandler>("Gateway", _ => { });
         services.AddAuthorization(options =>
@@ -126,7 +130,8 @@ public static class AppBootstrap
         services.AddScoped<ApiQuotaGuard>();
         services.AddScoped<IFootballApiClient>(provider => new FootballApiClient(
             provider.GetRequiredService<IHttpClientFactory>().CreateClient(),
-            provider.GetRequiredService<ApiQuotaGuard>()));
+            provider.GetRequiredService<ApiQuotaGuard>(),
+            provider.GetRequiredService<ILogger<FootballApiClient>>()));
         services.AddScoped<IMatchScheduleService>(provider => new MatchScheduleService(
             provider.GetRequiredService<IAmazonScheduler>(),
             Required("SCHEDULER_GROUP_NAME"),

@@ -64,17 +64,26 @@ internal record DailyDependencies(
 
 internal static class JobComposition
 {
+    private static readonly ILoggerFactory LoggerFactory =
+        Microsoft.Extensions.Logging.LoggerFactory.Create(logging =>
+            logging.AddLambdaLogger(new LambdaLoggerOptions
+            {
+                IncludeException = true
+            }));
+
     public static PollingDependencies CreatePollingDependencies()
     {
         var options = DynamoOptions();
         var dynamo = new AmazonDynamoDBClient();
         var schedules = ScheduleService();
         var management = new DynamoMatchManagementStore(dynamo, options);
-        var quota = new ApiQuotaGuard(
-            new DynamoApiQuotaRepository(dynamo, options));
+        var quota = new ApiQuotaGuard(new DynamoApiQuotaRepository(dynamo, options));
         return new PollingDependencies(
             new DynamoMatchPollingStore(dynamo, options),
-            new FootballApiClient(new HttpClient(), quota),
+            new FootballApiClient(
+                new HttpClient(),
+                quota,
+                LoggerFactory.CreateLogger<FootballApiClient>()),
             new JsonRosterCatalog(Path.Combine(AppContext.BaseDirectory, "assets", "teams.json")),
             new DynamoProvisionalResultStore(dynamo, options),
             schedules,
