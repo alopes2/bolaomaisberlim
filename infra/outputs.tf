@@ -33,3 +33,7 @@ output "cloudfront_domain_name" {
 output "lambda_function_names" {
   value = { for key, function in aws_lambda_function.this : key => function.function_name }
 }
+
+output "scheduler_schedule_group_name" {
+  value = nonsensitive(aws_scheduler_schedule_group.matches.name)
+}

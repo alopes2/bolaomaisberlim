@@ -44,7 +44,11 @@ jobs:
           set -euo pipefail
           expected="$(openssl dgst -sha256 -binary backend/lambda.zip | openssl base64 -A)"
           test -n "$LAMBDA_FUNCTION_NAMES"
-          for function_name in $LAMBDA_FUNCTION_NAMES; do
+          read -r -a function_names <<< "$LAMBDA_FUNCTION_NAMES"
+          test "${#function_names[@]}" -eq 2
+          printf '%s\n' "${function_names[@]}" | grep -Eq -- '-api$'
+          printf '%s\n' "${function_names[@]}" | grep -Eq -- '-retention$'
+          for function_name in "${function_names[@]}"; do
             aws lambda update-function-code \
               --function-name "$function_name" \
               --zip-file fileb://backend/lambda.zip \

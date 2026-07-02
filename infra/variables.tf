@@ -16,12 +16,6 @@ variable "environment" {
   default     = "dev"
 }
 
-variable "api_football_key" {
-  description = "API-Football key injected into the Lambdas that call the provider."
-  type        = string
-  sensitive   = true
-}
-
 variable "admin_emails" {
   description = "Verified Google email addresses that receive Cognito administrator claims."
   type        = set(string)

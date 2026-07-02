@@ -1,6 +1,6 @@
 # MaisBerlim Bolão da Copa
 
-Bolão comunitário reutilizável para os jogos do Brasil. A SPA React roda em S3/CloudFront; a API e os jobs usam Lambda .NET 10, API Gateway, DynamoDB, Cognito, EventBridge Scheduler e API-Football.
+Bolão comunitário reutilizável para os jogos do Brasil. A SPA React roda em S3/CloudFront; a API e o job de retenção usam Lambda .NET 10, API Gateway, DynamoDB, Cognito e EventBridge Scheduler.
 
 Os termos, fluxos, pontuação e desempates estão em [docs/domain-and-flow.md](docs/domain-and-flow.md).
 
@@ -47,10 +47,9 @@ O root fica em `infra/`. O estado remoto já existente usa:
 - região `eu-central-1`;
 - criptografia e lock nativo do backend S3.
 
-A chave da API-Football é uma variável sensível e deve ser fornecida somente por ambiente:
+Inicialize e revise o plano antes de aplicar:
 
 ```bash
-export TF_VAR_api_football_key='...'
 terraform -chdir=infra init
 terraform -chdir=infra plan
 ```
@@ -63,10 +62,7 @@ Crie o ambiente protegido `production`, com aprovação obrigatória para deploy
 
 | Variável | Uso |
 | --- | --- |
-| `AWS_INFRA_ROLE_ARN` | role OIDC externa para plan/apply do Terraform |
-| `AWS_BACKEND_ROLE_ARN` | role OIDC externa para atualizar somente código das Lambdas |
-| `AWS_FRONTEND_ROLE_ARN` | role OIDC externa para S3 e invalidação CloudFront |
-| `LAMBDA_FUNCTION_NAMES` | nomes das quatro Lambdas separados por espaço |
+| `LAMBDA_FUNCTION_NAMES` | exatamente os nomes das Lambdas sobreviventes de API e retenção, separados por espaço, por exemplo `bolaomaisberlim-dev-api bolaomaisberlim-dev-retention` |
 | `VITE_API_BASE_URL` | output `api_url` |
 | `VITE_COGNITO_USER_POOL_ID` | output `cognito_user_pool_id` |
 | `VITE_COGNITO_CLIENT_ID` | output `cognito_user_pool_client_id` |
@@ -76,23 +72,32 @@ Crie o ambiente protegido `production`, com aprovação obrigatória para deploy
 | `COGNITO_LOGOUT_URLS` | array JSON com URLs pós-logout, incluindo `/` final |
 | `GOOGLE_CLIENT_ID` | client ID OAuth Web do Google |
 | `ADMIN_EMAILS` | array JSON de e-mails Google administradores |
-| `FRONTEND_BUCKET_NAME` | output `frontend_bucket_name` |
 | `CLOUDFRONT_DISTRIBUTION_ID` | output `cloudfront_distribution_id` |
 | `SES_IDENTITY_ARN` | opcional; identidade SES para notificar o vencedor |
 | `SES_FROM_EMAIL` | opcional; remetente da notificação do vencedor |
 
 Configure os GitHub Secrets protegidos:
 
-- `API_FOOTBALL_KEY`: o workflow de infraestrutura o expõe apenas ao Terraform como `TF_VAR_api_football_key`;
+- `AWS_ROLE_ARN`: role OIDC assumida pelos workflows; ela deve ter as permissões do workflow executado;
+- `FRONTEND_BUCKET_NAME`: output `frontend_bucket_name`;
 - `GOOGLE_CLIENT_SECRET`: segredo do client OAuth Web, exposto apenas como `TF_VAR_google_client_secret`.
+
+Antes ou junto do primeiro deploy desta remoção, atualize `LAMBDA_FUNCTION_NAMES` no ambiente `production`. O workflow Backend falha se a lista não tiver exatamente uma função terminada em `-api` e uma terminada em `-retention`. Obtenha os nomes aplicados com:
+
+```bash
+terraform -chdir=infra output -json lambda_function_names |
+  jq -r '[.api, .retention] | join(" ")'
+```
 
 O plan é armazenado como artifact privado e não é publicado em comentários ou logs. O segredo OAuth fica no state porque faz parte da configuração do provedor Google no Cognito; mantenha o backend do Terraform restrito. `ADMIN_EMAILS` não é secreto e controla claims, não usuários Cognito persistentes.
 
 As trust policies das roles externas devem restringir `sub` ao repositório/branch ou ao ambiente `production`. As permissões mínimas são:
 
-- infraestrutura: backend S3 e recursos administrados em `infra/`;
-- backend: `lambda:UpdateFunctionCode`, `lambda:GetFunction` nas quatro funções;
+- infraestrutura: backend S3 e recursos administrados em `infra/`. Durante o primeiro apply desta remoção, inclua também `scheduler:ListSchedules` no grupo de schedules retido e `scheduler:DeleteSchedule` nos schedules `match-*` desse grupo, pois o workflow remove schedules antigos depois do apply;
+- backend: `lambda:UpdateFunctionCode`, `lambda:GetFunction` somente nas funções de API e retenção;
 - frontend: escrita/remoção somente no bucket da UI e invalidação somente da distribuição correspondente.
+
+Quando a política permitir escopo por recurso, restrinja Scheduler aos ARNs `schedule-group/<grupo>` e `schedule/<grupo>/match-*`. Se `scheduler:ListSchedules` exigir `Resource: "*"` na política usada, mantenha apenas essa ação global e preserve `scheduler:DeleteSchedule` no padrão `match-*` do grupo.
 
 ## Administração
 
@@ -110,19 +115,18 @@ No Google Cloud Console:
 
 Use somente os escopos `openid`, `email` e `profile`. Login local, senha e código por e-mail não são expostos pelo app client.
 
-A área de apuração usa `/admin?matchId=MATCH_ID`. O cadastro/ajuste de jogo também está disponível pela API administrativa e recebe `id`, `providerFixtureId`, `kickoff`, códigos FIFA e, após a entrega, `prizeHandedOverAt`.
+A área de apuração usa `/admin?matchId=MATCH_ID`. O cadastro/ajuste de jogo também está disponível pela API administrativa e recebe `id`, `kickoff`, códigos FIFA e, após a entrega, `prizeHandedOverAt`.
 
-Consulte [`docs/world-cup-2026-fixtures.md`](docs/world-cup-2026-fixtures.md) para sincronizar e gerenciar os jogos da Copa do Mundo, usar o cadastro manual e entender o polling automático.
+Consulte [`docs/manual-match-management.md`](docs/manual-match-management.md) para criar jogos, registrar e confirmar resultados e finalizar o jogo atual.
 
-O admin revisa o resultado bruto, resolve jogadores, corrige valores, consulta o ranking provisório e confirma. A confirmação grava `ConfirmedBySub`, `ConfirmedAt`, snapshot e `ResultVersion`; repetir a mesma versão não duplica pontos.
+O admin registra gols em ordem, cartões e eventual vencedor nos pênaltis, consulta o ranking provisório e confirma. A confirmação grava `ConfirmedBySub`, `ConfirmedAt`, snapshot e `ResultVersion`; repetir a mesma versão não duplica pontos.
 
 ## Operação
 
-- `ApiUsage` limita o consumo interno a 80 das 100 chamadas diárias da API-Football. Consulte a tabela indicada por `API_USAGE_TABLE_NAME` e o item `Provider=api-football` para diagnóstico.
-- O polling roda a cada 10 minutos e para em resultado final, adiamento/suspensão, quota ou quatro horas após o início.
-- Se a API externa falhar ou a quota terminar, use `PUT /admin/matches/{id}/result` e confirme manualmente.
+- Jogos e resultados são gerenciados manualmente em `/admin`; não há importação, consulta externa nem mudança automática de status.
+- Use `PUT /admin/matches/{id}/result` para salvar o rascunho, `POST /admin/matches/{id}/confirm` para publicá-lo e `POST /admin/matches/{id}/finish` para fechar o jogo e ativar o próximo.
 - Depois da entrega do prêmio, grave `prizeHandedOverAt`. O job diário anonimiza PII e solicita exclusão da conta Cognito 90 dias após a data mais recente aplicável ao participante, preservando agregados.
-- Logs não devem conter nomes, e-mails, tokens, palpites completos nem a chave da API.
+- Logs não devem conter nomes, e-mails, tokens nem palpites completos.
 
 ## SES e domínio
 
@@ -140,15 +144,14 @@ Falhas normais do SES liberam o claim para retry manual e permanecem visíveis a
 
 ## Rollback
 
-- Backend: selecione no `workflow_dispatch` um ref conhecido ou reverta o commit e execute `Backend`; o mesmo ZIP é enviado a todas as Lambdas e o checksum é validado.
+- Backend: selecione no `workflow_dispatch` um ref conhecido ou reverta o commit e execute `Backend`; o mesmo ZIP é enviado às Lambdas de API e retenção e o checksum é validado.
 - Frontend: execute `Frontend` a partir de um ref conhecido ou reverta; o workflow sincroniza o build e invalida CloudFront.
 - Infraestrutura: reverta a alteração Terraform por PR, revise o novo plan e aplique pelo ambiente protegido. Não restaure state manualmente como procedimento normal.
 - Resultado incorreto: não altere standings diretamente. Corrija pelo fluxo administrativo antes da confirmação; após publicação, trate a correção como operação assistida e audite o snapshot/versionamento.
 
 ## Ações ainda dependentes do dono
 
-- informar as três roles OIDC externas e suas trust policies;
-- fornecer `API_FOOTBALL_KEY`;
+- informar a role OIDC externa em `AWS_ROLE_ARN` e restringir sua trust policy;
 - criar as credenciais OAuth Web do Google e fornecer o client ID/secret;
 - executar/revisar o primeiro plan/apply;
 - obter SES production access e os registros DNS antes de ativar e-mail próprio.

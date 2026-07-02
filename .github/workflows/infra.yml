@@ -27,7 +27,6 @@ jobs:
     env:
       AWS_REGION: eu-central-1
       TF_IN_AUTOMATION: 'true'
-      TF_VAR_api_football_key: ${{ secrets.API_FOOTBALL_KEY }}
       TF_VAR_admin_emails: ${{ vars.ADMIN_EMAILS }}
       TF_VAR_cognito_domain_prefix: ${{ vars.COGNITO_DOMAIN_PREFIX }}
       TF_VAR_cognito_callback_urls: ${{ vars.COGNITO_CALLBACK_URLS }}
@@ -62,7 +61,6 @@ jobs:
     env:
       AWS_REGION: eu-central-1
       TF_IN_AUTOMATION: 'true'
-      TF_VAR_api_football_key: ${{ secrets.API_FOOTBALL_KEY }}
       TF_VAR_admin_emails: ${{ vars.ADMIN_EMAILS }}
       TF_VAR_cognito_domain_prefix: ${{ vars.COGNITO_DOMAIN_PREFIX }}
       TF_VAR_cognito_callback_urls: ${{ vars.COGNITO_CALLBACK_URLS }}
@@ -85,3 +83,20 @@ jobs:
         run: terraform -chdir=infra plan -input=false -out=tfplan
       - name: Apply through protected environment
         run: terraform -chdir=infra apply -input=false -auto-approve tfplan
+      - name: Remove obsolete match schedules
+        shell: bash
+        run: |
+          set -euo pipefail
+          group_name="$(terraform -chdir=infra output -raw scheduler_schedule_group_name)"
+          schedule_names="$(
+            aws scheduler list-schedules \
+              --group-name "$group_name" \
+              --output json |
+              jq -r '.Schedules[] | select(.Name | startswith("match-")) | .Name'
+          )"
+          while IFS= read -r schedule_name; do
+            test -n "$schedule_name" || continue
+            aws scheduler delete-schedule \
+              --group-name "$group_name" \
+              --name "$schedule_name"
+          done <<< "$schedule_names"

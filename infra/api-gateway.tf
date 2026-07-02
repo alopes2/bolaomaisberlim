@@ -46,13 +46,12 @@ locals {
   admin_routes = toset([
     "GET /admin/matches",
     "POST /admin/matches",
-    "POST /admin/matches/world-cup/sync",
     "PUT /admin/matches/{matchId}",
-    "POST /admin/matches/{matchId}/sync",
-    "GET /admin/matches/{matchId}/raw-result",
+    "GET /admin/matches/{matchId}/result",
     "GET /admin/matches/{matchId}/provisional-leaderboard",
     "PUT /admin/matches/{matchId}/result",
-    "POST /admin/matches/{matchId}/confirm"
+    "POST /admin/matches/{matchId}/confirm",
+    "POST /admin/matches/{matchId}/finish"
   ])
 }
 

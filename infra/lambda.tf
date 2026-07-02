@@ -17,16 +17,6 @@ locals {
       timeout     = 30
       memory_size = 512
     }
-    daily_sync = {
-      handler     = "Bolao.Functions::Bolao.Functions.Jobs.DailyMatchSyncHandler::HandleAsync"
-      timeout     = 60
-      memory_size = 512
-    }
-    match_polling = {
-      handler     = "Bolao.Functions::Bolao.Functions.Jobs.MatchPollingHandler::HandleAsync"
-      timeout     = 60
-      memory_size = 512
-    }
     retention = {
       handler     = "Bolao.Functions::Bolao.Functions.Jobs.DataRetentionHandler::HandleAsync"
       timeout     = 60
@@ -42,19 +32,6 @@ locals {
       "dynamodb:PutItem",
       "dynamodb:Query",
       "dynamodb:Scan",
-      "dynamodb:TransactWriteItems",
-      "dynamodb:UpdateItem"
-    ]
-    daily_sync = [
-      "dynamodb:GetItem",
-      "dynamodb:PutItem",
-      "dynamodb:Query",
-      "dynamodb:UpdateItem"
-    ]
-    match_polling = [
-      "dynamodb:GetItem",
-      "dynamodb:PutItem",
-      "dynamodb:Query",
       "dynamodb:TransactWriteItems",
       "dynamodb:UpdateItem"
     ]
@@ -118,39 +95,6 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
   })
 }
 
-resource "aws_iam_role_policy" "daily_sync_match_scan" {
-  name = "${local.name_prefix}-daily-sync-match-scan"
-  role = aws_iam_role.lambda["daily_sync"].id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["dynamodb:Scan"]
-      Resource = aws_dynamodb_table.this["matches"].arn
-    }]
-  })
-}
-
-resource "aws_iam_role_policy" "match_polling_status_coordination" {
-  name = "${local.name_prefix}-match-polling-status-coordination"
-  role = aws_iam_role.lambda["match_polling"].id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = ["dynamodb:Scan"]
-        Resource = aws_dynamodb_table.this["matches"].arn
-      },
-      {
-        Effect   = "Allow"
-        Action   = ["dynamodb:DeleteItem"]
-        Resource = aws_dynamodb_table.this["api_usage"].arn
-      }
-    ]
-  })
-}
-
 resource "aws_iam_role_policy" "api_cognito" {
   name = "${local.name_prefix}-api-cognito"
   role = aws_iam_role.lambda["api"].id
@@ -209,19 +153,13 @@ resource "aws_lambda_function" "this" {
 
   environment {
     variables = merge({
-      PARTICIPANTS_TABLE_NAME    = aws_dynamodb_table.this["participants"].name
-      MATCHES_TABLE_NAME         = aws_dynamodb_table.this["matches"].name
-      PREDICTIONS_TABLE_NAME     = aws_dynamodb_table.this["predictions"].name
-      STANDINGS_TABLE_NAME       = aws_dynamodb_table.this["standings"].name
-      API_USAGE_TABLE_NAME       = aws_dynamodb_table.this["api_usage"].name
-      COGNITO_USER_POOL_ID       = aws_cognito_user_pool.main.id
-      SCHEDULER_GROUP_NAME       = aws_scheduler_schedule_group.matches.name
-      MATCH_POLLING_FUNCTION_ARN = "arn:${data.aws_partition.current.partition}:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.name_prefix}-match-polling"
-      SCHEDULER_INVOKE_ROLE_ARN  = aws_iam_role.scheduler_invoke.arn
+      PARTICIPANTS_TABLE_NAME = aws_dynamodb_table.this["participants"].name
+      MATCHES_TABLE_NAME      = aws_dynamodb_table.this["matches"].name
+      PREDICTIONS_TABLE_NAME  = aws_dynamodb_table.this["predictions"].name
+      STANDINGS_TABLE_NAME    = aws_dynamodb_table.this["standings"].name
+      COGNITO_USER_POOL_ID    = aws_cognito_user_pool.main.id
       }, each.key == "api" && local.ses_from_email != null ? {
       SES_FROM_EMAIL = local.ses_from_email
-      } : {}, contains(["api", "daily_sync", "match_polling"], each.key) ? {
-      FOOTBALL_API_KEY = var.api_football_key
     } : {})
   }
 

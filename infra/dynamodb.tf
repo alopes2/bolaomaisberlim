@@ -24,12 +24,6 @@ locals {
       range_key  = null
       attributes = ["ParticipantId"]
     }
-    api_usage = {
-      name       = "${local.name_prefix}-api-usage"
-      hash_key   = "Provider"
-      range_key  = null
-      attributes = ["Provider"]
-    }
   }
 }
 
