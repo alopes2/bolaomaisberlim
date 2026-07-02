@@ -61,7 +61,7 @@ public class DynamoPredictionRepository(
         PredictionAnswers answers,
         DateTimeOffset submittedAt)
     {
-        return new Dictionary<string, AttributeValue>
+        var item = new Dictionary<string, AttributeValue>
         {
             ["MatchId"] = new(matchId),
             ["ParticipantId"] = new(participantId),
@@ -76,6 +76,13 @@ public class DynamoPredictionRepository(
             ["AwayRedCards"] = Number(answers.AwayRedCards),
             ["SubmittedAt"] = new(submittedAt.ToString("O", CultureInfo.InvariantCulture))
         };
+
+        if (answers.PenaltyWinnerTeamFifaCode is not null)
+        {
+            item["PenaltyWinnerTeamFifaCode"] = new(answers.PenaltyWinnerTeamFifaCode);
+        }
+
+        return item;
     }
 
     private static StoredPrediction ToPrediction(Dictionary<string, AttributeValue> item)
@@ -92,7 +99,8 @@ public class DynamoPredictionRepository(
                 Integer(item, "HomeYellowCards"),
                 Integer(item, "AwayYellowCards"),
                 Integer(item, "HomeRedCards"),
-                Integer(item, "AwayRedCards")),
+                Integer(item, "AwayRedCards"),
+                OptionalString(item, "PenaltyWinnerTeamFifaCode")),
             DateTimeOffset.Parse(item["SubmittedAt"].S, CultureInfo.InvariantCulture));
     }
 
@@ -104,5 +112,17 @@ public class DynamoPredictionRepository(
     private static int Integer(IReadOnlyDictionary<string, AttributeValue> item, string key)
     {
         return int.Parse(item[key].N, CultureInfo.InvariantCulture);
+    }
+
+    private static string? OptionalString(
+        IReadOnlyDictionary<string, AttributeValue> item,
+        string key)
+    {
+        if (!item.TryGetValue(key, out var value) || value is null || value.NULL == true)
+        {
+            return null;
+        }
+
+        return value.S;
     }
 }

@@ -9,7 +9,6 @@ public class InMemoryRepositories
     private readonly Dictionary<(string MatchId, string ParticipantId), StoredPrediction> predictions = [];
     private readonly Dictionary<string, Standing> standings = [];
     private readonly Dictionary<string, string> publishedVersions = [];
-    private readonly Dictionary<string, ConfirmedResult> provisionalResults = [];
     private readonly Dictionary<string, ConfirmedResult> confirmedResults = [];
 
     public Task UpsertAsync(
@@ -50,19 +49,6 @@ public class InMemoryRepositories
             standings.TryGetValue(participantId, out var standing);
             return Task.FromResult(standing);
         }
-    }
-
-    public Task SaveProvisionalAsync(
-        string matchId,
-        ConfirmedResult result,
-        CancellationToken cancellationToken)
-    {
-        lock (gate)
-        {
-            provisionalResults[matchId] = result;
-        }
-
-        return Task.CompletedTask;
     }
 
     public Task PublishAsync(
@@ -110,7 +96,7 @@ public class InMemoryRepositories
         standings[update.ParticipantId] = new Standing(
             update.ParticipantId,
             (current?.TotalPoints ?? 0) + update.Score.Total,
-            (current?.ExactScoreCount ?? 0) + (update.Score.Result == 5 ? 1 : 0),
+            (current?.ExactScoreCount ?? 0) + (update.Score.ExactScore ? 1 : 0),
             (current?.FirstScorerCount ?? 0) + (update.Score.FirstScorer == 3 ? 1 : 0),
             Earlier(current?.FinalSubmissionAt, update.SubmittedAt),
             appliedMatches);

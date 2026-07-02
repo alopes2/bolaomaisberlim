@@ -5,7 +5,14 @@ public static class ScoreCalculator
     public static ScoreBreakdown Score(PredictionAnswers prediction, ConfirmedResult result)
     {
         return new ScoreBreakdown(
-            ScoreResult(prediction.HomeGoals, prediction.AwayGoals, result.HomeGoals, result.AwayGoals),
+            ScoreResult(
+                prediction.HomeGoals,
+                prediction.AwayGoals,
+                prediction.PenaltyWinnerTeamFifaCode,
+                result.HomeGoals,
+                result.AwayGoals,
+                result.PenaltyWinnerTeamFifaCode),
+            prediction.HomeGoals == result.HomeGoals && prediction.AwayGoals == result.AwayGoals,
             ScoreFirstScorer(prediction.FirstScorerKey, result),
             ScoreTopScorer(prediction.HomeTopScorerKey, result.HomeTopScorerKeys),
             ScoreTopScorer(prediction.AwayTopScorerKey, result.AwayTopScorerKeys),
@@ -21,9 +28,20 @@ public static class ScoreCalculator
         int actualHome,
         int actualAway)
     {
+        return ScoreResult(predictedHome, predictedAway, null, actualHome, actualAway, null);
+    }
+
+    public static int ScoreResult(
+        int predictedHome,
+        int predictedAway,
+        string? predictedPenaltyWinner,
+        int actualHome,
+        int actualAway,
+        string? actualPenaltyWinner)
+    {
         if (predictedHome == actualHome && predictedAway == actualAway)
         {
-            return 5;
+            return actualPenaltyWinner is null || predictedPenaltyWinner == actualPenaltyWinner ? 5 : 4;
         }
 
         return Math.Sign(predictedHome - predictedAway) == Math.Sign(actualHome - actualAway)

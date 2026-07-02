@@ -20,6 +20,60 @@ public class ScoreCalculatorTests
             .Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData("BRA", "BRA", 5)]
+    [InlineData("ARG", "BRA", 4)]
+    [InlineData(null, "BRA", 4)]
+    [InlineData(null, null, 5)]
+    [InlineData("BRA", null, 5)]
+    public void ExactDrawAccountsForPenaltyWinner(
+        string? predictedWinner,
+        string? actualWinner,
+        int expected)
+    {
+        ScoreCalculator.ScoreResult(1, 1, predictedWinner, 1, 1, actualWinner)
+            .Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("BRA", "ARG", 1, 1, 4, true)]
+    [InlineData(null, "BRA", 1, 1, 4, true)]
+    [InlineData("BRA", null, 1, 1, 5, true)]
+    [InlineData("BRA", "ARG", 2, 2, 2, false)]
+    public void ReportsExactScoreIndependentlyFromPenaltyPoints(
+        string? predictedWinner,
+        string? actualWinner,
+        int actualHomeGoals,
+        int actualAwayGoals,
+        int expectedPoints,
+        bool expectedExactScore)
+    {
+        var prediction = Prediction(homeGoals: 1, awayGoals: 1) with
+        {
+            PenaltyWinnerTeamFifaCode = predictedWinner
+        };
+        var result = Result(homeGoals: actualHomeGoals, awayGoals: actualAwayGoals) with
+        {
+            PenaltyWinnerTeamFifaCode = actualWinner
+        };
+
+        var score = ScoreCalculator.Score(prediction, result);
+
+        score.Result.Should().Be(expectedPoints);
+        score.ExactScore.Should().Be(expectedExactScore);
+    }
+
+    [Theory]
+    [InlineData("BRA", "ARG")]
+    [InlineData(null, "BRA")]
+    public void NonExactDrawScoresOutcomeRegardlessOfPenaltyWinner(
+        string? predictedWinner,
+        string? actualWinner)
+    {
+        ScoreCalculator.ScoreResult(1, 1, predictedWinner, 2, 2, actualWinner)
+            .Should().Be(2);
+    }
+
     [Fact]
     public void ScoresFirstScorerAndUniqueTopScorers()
     {

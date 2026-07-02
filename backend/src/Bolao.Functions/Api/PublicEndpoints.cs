@@ -9,7 +9,9 @@ public static class PublicEndpoints
             CancellationToken cancellationToken) =>
         {
             var match = await queries.GetCurrentMatchAsync(cancellationToken);
-            return match is null ? ApiProblem.MatchNotFound() : Results.Ok(match);
+            return match is null
+                ? Results.Text("null", "application/json")
+                : Results.Ok(match);
         });
 
         endpoints.MapGet("/matches/history", async (

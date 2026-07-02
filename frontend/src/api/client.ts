@@ -12,48 +12,30 @@ export type MatchResponse = {
   awayTeamFifaCode: string;
 };
 
-export type MatchStatus = 'Active' | 'Upcoming' | 'Archived' | 'Closed';
+export type MatchStatus = 'Active' | 'Upcoming' | 'Closed' | 'Archived';
 
 export type AdminMatch = {
   id: string;
-  providerFixtureId: number;
   kickoff: string;
   homeTeamFifaCode: string;
   awayTeamFifaCode: string;
-  providerStatus: string;
-  status: MatchStatus | null;
+  status: MatchStatus;
+  resultConfirmed: boolean;
 };
 
 export type AdminMatchesResponse = {
   matches: AdminMatch[];
-  lastSuccessfulSyncAt: string | null;
-  providerCallAvailable: boolean;
-};
-
-export type WorldCupSkipReasonCode = 'missing_fifa_code' | 'unsupported_team_code';
-
-export type SkippedWorldCupFixture = {
-  fixtureId: number;
-  reasonCode: WorldCupSkipReasonCode;
-};
-
-export type WorldCupSyncResponse = {
-  providerFetchPerformed: boolean;
-  lastSuccessfulSyncAt: string | null;
-  createdCount: number;
-  updatedCount: number;
-  statusChangeCount: number;
-  skippedFixtures: SkippedWorldCupFixture[];
 };
 
 export type CreateAdminMatchRequest = {
   id: string;
-  providerFixtureId: number;
   kickoff: string;
   homeTeamFifaCode: string;
   awayTeamFifaCode: string;
   prizeHandedOverAt: string | null;
 };
+
+export type UpdateAdminMatchRequest = Omit<CreateAdminMatchRequest, 'id'>;
 
 export type PredictionAnswers = {
   homeGoals: number;
@@ -65,6 +47,7 @@ export type PredictionAnswers = {
   awayYellowCards: number;
   homeRedCards: number;
   awayRedCards: number;
+  penaltyWinnerTeamFifaCode: string | null;
 };
 
 export type StoredPrediction = {
@@ -109,26 +92,34 @@ export type ConfirmedResultResponse = {
   awayRedCards: number;
 };
 
-export type AdminResultResponse = {
-  providerStatus: string;
-  result: ConfirmedResultResponse;
-  unresolvedPlayers: Array<{
-    providerPlayerId: number;
-    providerName: string;
-    teamFifaCode: string;
-  }>;
-  homeGoalEvents: number | null;
-  awayGoalEvents: number | null;
+export type ManualGoal = {
+  teamFifaCode: string;
+  playerKey: string;
+};
+
+export type ManualResultDraft = {
+  goals: ManualGoal[];
+  homeYellowCards: number;
+  awayYellowCards: number;
+  homeRedCards: number;
+  awayRedCards: number;
+  penaltyWinnerTeamFifaCode: string | null;
+};
+
+export type FinishMatchResponse = {
+  closedMatchId: string;
+  activatedMatchId: string | null;
 };
 
 export interface AdminApi {
   getAdminMatches(): Promise<AdminMatchesResponse>;
-  syncWorldCupMatches(): Promise<WorldCupSyncResponse>;
   createAdminMatch(request: CreateAdminMatchRequest): Promise<void>;
-  getAdminResult(matchId: string): Promise<AdminResultResponse>;
+  updateAdminMatch(matchId: string, request: UpdateAdminMatchRequest): Promise<void>;
+  getAdminResult(matchId: string): Promise<ManualResultDraft>;
   getProvisionalLeaderboard(matchId: string): Promise<LeaderboardResponse>;
-  saveAdminResult(matchId: string, result: AdminResultResponse): Promise<void>;
+  saveAdminResult(matchId: string, result: ManualResultDraft): Promise<void>;
   confirmResult(matchId: string): Promise<void>;
+  finishMatch(matchId: string): Promise<FinishMatchResponse>;
 }
 
 export interface ProfileApi {
@@ -163,13 +154,13 @@ export class ApiClient implements ProfileApi, AdminApi {
     return ((await response.json()) as { exists: boolean }).exists;
   }
 
-  async getCurrentMatch() {
+  async getCurrentMatch(): Promise<MatchResponse | null> {
     const response = await fetch(
       `${this.baseUrl.replace(/\/$/, '')}/matches/current`,
     );
     if (!response.ok)
       throw new Error('Não foi possível carregar o jogo atual.');
-    return (await response.json()) as MatchResponse;
+    return (await response.json()) as MatchResponse | null;
   }
 
   async getLeaderboard() {
@@ -225,11 +216,11 @@ export class ApiClient implements ProfileApi, AdminApi {
 
   async getAdminResult(matchId: string) {
     const response = await this.authorizedFetch(
-      `/admin/matches/${matchId}/raw-result`,
+      `/admin/matches/${matchId}/result`,
     );
     if (!response.ok)
       throw new Error('Não foi possível carregar o resultado provisório.');
-    return (await response.json()) as AdminResultResponse;
+    return (await response.json()) as ManualResultDraft;
   }
 
   async getAdminMatches() {
@@ -238,16 +229,6 @@ export class ApiClient implements ProfileApi, AdminApi {
       throw await apiError(response, 'Não foi possível carregar os jogos.');
     }
     return (await response.json()) as AdminMatchesResponse;
-  }
-
-  async syncWorldCupMatches() {
-    const response = await this.authorizedFetch('/admin/matches/world-cup/sync', {
-      method: 'POST',
-    });
-    if (!response.ok) {
-      throw await apiError(response, 'Não foi possível sincronizar os jogos.');
-    }
-    return (await response.json()) as WorldCupSyncResponse;
   }
 
   async createAdminMatch(request: CreateAdminMatchRequest) {
@@ -260,6 +241,19 @@ export class ApiClient implements ProfileApi, AdminApi {
     }
   }
 
+  async updateAdminMatch(matchId: string, request: UpdateAdminMatchRequest) {
+    const response = await this.authorizedFetch(
+      `/admin/matches/${encodeURIComponent(matchId)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(request),
+      },
+    );
+    if (!response.ok) {
+      throw await apiError(response, 'Não foi possível atualizar o jogo.');
+    }
+  }
+
   async getProvisionalLeaderboard(matchId: string) {
     const response = await this.authorizedFetch(
       `/admin/matches/${matchId}/provisional-leaderboard`,
@@ -269,7 +263,7 @@ export class ApiClient implements ProfileApi, AdminApi {
     return (await response.json()) as LeaderboardResponse;
   }
 
-  async saveAdminResult(matchId: string, result: AdminResultResponse) {
+  async saveAdminResult(matchId: string, result: ManualResultDraft) {
     const response = await this.authorizedFetch(
       `/admin/matches/${matchId}/result`,
       {
@@ -289,6 +283,16 @@ export class ApiClient implements ProfileApi, AdminApi {
     );
     if (!response.ok)
       throw new Error('Não foi possível confirmar o resultado.');
+  }
+
+  async finishMatch(matchId: string) {
+    const response = await this.authorizedFetch(
+      `/admin/matches/${matchId}/finish`,
+      { method: 'POST' },
+    );
+    if (!response.ok)
+      throw await apiError(response, 'Não foi possível finalizar o jogo.');
+    return (await response.json()) as FinishMatchResponse;
   }
 
   private async authorizedFetch(path: string, init: RequestInit = {}) {
@@ -322,7 +326,8 @@ async function apiError(response: Response, fallback: string) {
 const adminProblemMessages: Record<string, string> = {
   invalid_match: 'Revise os dados do jogo e tente novamente.',
   match_exists: 'Já existe um jogo com este ID.',
-  fixture_sync_failed: 'Não foi possível importar os jogos da Copa do Mundo. Tente novamente.',
-  fixture_status_reconciliation_failed:
-    'Os jogos foram importados, mas os status não foram atualizados. Tente sincronizar novamente.',
+  match_not_active: 'O jogo selecionado não está ativo.',
+  confirmed_result_required: 'Confirme o resultado antes de finalizar o jogo.',
+  match_lifecycle_conflict: 'Outro jogo foi alterado ao mesmo tempo. Atualize a página e tente novamente.',
+  match_not_found: 'Jogo não encontrado.',
 };

@@ -73,6 +73,30 @@ export function CurrentMatchPage({ api }: { api: ApiClient }) {
   }
 
   const match = matchQuery.data;
+  if (!match) {
+    return (
+      <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-4 p-4 sm:p-8">
+        <Card>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">Nenhum bolao ativo no momento</p>
+          </CardContent>
+        </Card>
+        {leaderboardQuery.isPending ? (
+          <Skeleton className="h-32 w-full" />
+        ) : leaderboardQuery.isSuccess ? (
+          <>
+            <RoundWinner winner={leaderboardQuery.data.roundWinner} />
+            <Leaderboard entries={leaderboardQuery.data.entries} />
+          </>
+        ) : null}
+        {historyQuery.isPending ? (
+          <Skeleton className="h-24 w-full" />
+        ) : historyQuery.isSuccess ? (
+          <MatchHistory matches={historyQuery.data} />
+        ) : null}
+      </main>
+    );
+  }
   const home = getRoster(match.homeTeamFifaCode);
   const away = getRoster(match.awayTeamFifaCode);
 
@@ -102,7 +126,9 @@ export function CurrentMatchPage({ api }: { api: ApiClient }) {
           ) : (
             <PredictionForm
               homeTeam={home.name}
+              homeTeamFifaCode={match.homeTeamFifaCode}
               awayTeam={away.name}
+              awayTeamFifaCode={match.awayTeamFifaCode}
               homePlayers={home.players}
               awayPlayers={away.players}
               cutoffAt={cutoffAt}

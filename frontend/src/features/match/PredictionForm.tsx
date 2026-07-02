@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Controller, useForm } from 'react-hook-form';
+import { useEffect } from 'react';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { Button } from '@/components/ui/button';
@@ -30,13 +31,16 @@ const predictionSchema = z.object({
   awayYellowCards: z.number().int().min(0),
   homeRedCards: z.number().int().min(0),
   awayRedCards: z.number().int().min(0),
+  penaltyWinnerTeamFifaCode: z.string().nullable(),
 });
 
 export type PredictionValues = z.infer<typeof predictionSchema>;
 
 type PredictionFormProps = {
   homeTeam: string;
+  homeTeamFifaCode: string;
   awayTeam: string;
+  awayTeamFifaCode: string;
   homePlayers: PlayerOption[];
   awayPlayers: PlayerOption[];
   cutoffAt: string;
@@ -47,7 +51,9 @@ type PredictionFormProps = {
 
 export function PredictionForm({
   homeTeam,
+  homeTeamFifaCode,
   awayTeam,
+  awayTeamFifaCode,
   homePlayers,
   awayPlayers,
   cutoffAt,
@@ -66,6 +72,7 @@ export function PredictionForm({
     awayYellowCards: 0,
     homeRedCards: 0,
     awayRedCards: 0,
+    penaltyWinnerTeamFifaCode: null,
   };
   if (storedPrediction) {
     defaultValues = {
@@ -78,6 +85,7 @@ export function PredictionForm({
       awayYellowCards: storedPrediction.awayYellowCards,
       homeRedCards: storedPrediction.homeRedCards,
       awayRedCards: storedPrediction.awayRedCards,
+      penaltyWinnerTeamFifaCode: storedPrediction.penaltyWinnerTeamFifaCode,
     };
   }
   const form = useForm<PredictionValues>({
@@ -88,6 +96,13 @@ export function PredictionForm({
     ...homePlayers.map((player) => ({ ...player, team: homeTeam })),
     ...awayPlayers.map((player) => ({ ...player, team: awayTeam })),
   ];
+  const homeGoals = useWatch({ control: form.control, name: 'homeGoals' });
+  const awayGoals = useWatch({ control: form.control, name: 'awayGoals' });
+  const isDraw = homeGoals === awayGoals;
+
+  useEffect(() => {
+    if (!isDraw) form.setValue('penaltyWinnerTeamFifaCode', null);
+  }, [form, isDraw]);
 
   return (
     <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -114,6 +129,32 @@ export function PredictionForm({
               />
             </Field>
           </FieldGroup>
+        </FieldSet>
+
+        <FieldSet disabled={closed || !isDraw}>
+          <FieldLegend>Pênaltis</FieldLegend>
+          <Controller
+            control={form.control}
+            name="penaltyWinnerTeamFifaCode"
+            render={({ field }) => (
+              <Field>
+                <FieldLabel htmlFor="penalty-winner">Ganhador nos pênaltis</FieldLabel>
+                <select
+                  id="penalty-winner"
+                  className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  value={field.value ?? ''}
+                  onChange={(event) => field.onChange(event.target.value || null)}
+                >
+                  <option value="">Selecione</option>
+                  <option value={homeTeamFifaCode}>{homeTeam}</option>
+                  <option value={awayTeamFifaCode}>{awayTeam}</option>
+                </select>
+              </Field>
+            )}
+          />
+          <FieldDescription>
+            Para escohler ganhador nos penaltis, o placar tem que ser um empate
+          </FieldDescription>
         </FieldSet>
 
         <Controller

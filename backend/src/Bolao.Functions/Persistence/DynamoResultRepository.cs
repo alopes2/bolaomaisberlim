@@ -10,25 +10,6 @@ public class DynamoResultRepository(
     IAmazonDynamoDB client,
     DynamoDbOptions options) : IResultRepository
 {
-    public async Task SaveProvisionalAsync(
-        string matchId,
-        ConfirmedResult result,
-        CancellationToken cancellationToken)
-    {
-        await client.UpdateItemAsync(
-            new UpdateItemRequest
-            {
-                TableName = options.MatchesTableName,
-                Key = MatchKey(matchId),
-                UpdateExpression = "SET ProvisionalResult = :result",
-                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-                {
-                    [":result"] = new(JsonSerializer.Serialize(result))
-                }
-            },
-            cancellationToken);
-    }
-
     public async Task PublishAsync(
         string matchId,
         string resultVersion,
@@ -170,7 +151,7 @@ public class DynamoResultRepository(
             {
                 [":zero"] = Number(0),
                 [":points"] = Number(update.Score.Total),
-                [":exact"] = Number(update.Score.Result == 5 ? 1 : 0),
+                [":exact"] = Number(update.Score.ExactScore ? 1 : 0),
                 [":first"] = Number(update.Score.FirstScorer == 3 ? 1 : 0),
                 [":submittedAt"] = new(update.SubmittedAt.ToString("O", CultureInfo.InvariantCulture)),
                 [":matchId"] = new(matchId),

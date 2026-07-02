@@ -83,19 +83,6 @@ public class DynamoApiQueries(
     public async Task<Match?> GetCurrentMatchAsync(CancellationToken cancellationToken)
     {
         var items = await ScanMatchItemsAsync(cancellationToken);
-        var resultPendingConfirmation = items
-            .Where(item => MatchStatusValue(item) == MatchStatus.Closed
-                && item.ContainsKey("ProvisionalResult")
-                && !item.ContainsKey("PublishedResultVersion"))
-            .OrderByDescending(item => DateTimeOffset.Parse(
-                item["Kickoff"].S, CultureInfo.InvariantCulture))
-            .ThenBy(item => item["MatchId"].S, StringComparer.Ordinal)
-            .FirstOrDefault();
-        if (resultPendingConfirmation is not null)
-        {
-            return ToMatch(resultPendingConfirmation);
-        }
-
         return items
             .Where(item => MatchStatusValue(item) == MatchStatus.Active)
             .OrderBy(item => DateTimeOffset.Parse(item["Kickoff"].S, CultureInfo.InvariantCulture))
@@ -218,7 +205,7 @@ public class DynamoApiQueries(
         var winner = (await QueryPredictionsAsync(matchId, cancellationToken))
             .Select(prediction => new { Prediction = prediction, Score = ScoreCalculator.Score(prediction.Answers, result) })
             .OrderByDescending(item => item.Score.Total)
-            .ThenByDescending(item => item.Score.Result == 5)
+            .ThenByDescending(item => item.Score.ExactScore)
             .ThenByDescending(item => item.Score.FirstScorer == 3)
             .ThenBy(item => item.Prediction.SubmittedAt)
             .FirstOrDefault();
@@ -258,9 +245,6 @@ public class DynamoApiQueries(
         return response.Items.Select(ToPrediction).ToArray();
     }
 
-    private async Task<IReadOnlyList<Match>> ScanMatchesAsync(CancellationToken cancellationToken) =>
-        (await ScanMatchItemsAsync(cancellationToken)).Select(ToMatch).ToArray();
-
     private async Task<IReadOnlyList<Dictionary<string, AttributeValue>>> ScanMatchItemsAsync(
         CancellationToken cancellationToken)
     {
@@ -271,7 +255,8 @@ public class DynamoApiQueries(
             var response = await client.ScanAsync(new ScanRequest
             {
                 TableName = options.MatchesTableName,
-                ExclusiveStartKey = startKey
+                ExclusiveStartKey = startKey,
+                FilterExpression = "attribute_exists(Kickoff)"
             }, cancellationToken);
             items.AddRange(response.Items);
             startKey = response.LastEvaluatedKey;
@@ -301,7 +286,8 @@ public class DynamoApiQueries(
             Integer(item, "HomeGoals"), Integer(item, "AwayGoals"),
             item["FirstScorerKey"].S, item["HomeTopScorerKey"].S, item["AwayTopScorerKey"].S,
             Integer(item, "HomeYellowCards"), Integer(item, "AwayYellowCards"),
-            Integer(item, "HomeRedCards"), Integer(item, "AwayRedCards")),
+            Integer(item, "HomeRedCards"), Integer(item, "AwayRedCards"),
+            OptionalString(item, "PenaltyWinnerTeamFifaCode")),
         DateTimeOffset.Parse(item["SubmittedAt"].S, CultureInfo.InvariantCulture));
 
     private static Standing ToStanding(IReadOnlyDictionary<string, AttributeValue> item) => new(
@@ -313,4 +299,16 @@ public class DynamoApiQueries(
 
     private static int Integer(IReadOnlyDictionary<string, AttributeValue> item, string name) =>
         int.Parse(item[name].N, CultureInfo.InvariantCulture);
+
+    private static string? OptionalString(
+        IReadOnlyDictionary<string, AttributeValue> item,
+        string name)
+    {
+        if (!item.TryGetValue(name, out var value) || value is null || value.NULL == true)
+        {
+            return null;
+        }
+
+        return value.S;
+    }
 }

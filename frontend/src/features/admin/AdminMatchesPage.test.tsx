@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import '@testing-library/jest-dom/vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -9,44 +9,38 @@ import type { AdminApi, AdminMatchesResponse } from '@/api/client'
 import { AdminMatchesPage } from './AdminMatchesPage'
 
 const matches: AdminMatchesResponse = {
-  providerCallAvailable: true,
-  lastSuccessfulSyncAt: null,
   matches: [
     {
       id: 'later',
-      providerFixtureId: 3,
       kickoff: '2026-07-03T18:00:00Z',
       homeTeamFifaCode: 'BRA',
       awayTeamFifaCode: 'FRA',
-      providerStatus: 'NS',
       status: 'Upcoming',
+      resultConfirmed: false,
     },
     {
       id: 'active',
-      providerFixtureId: 2,
       kickoff: '2026-07-02T18:00:00Z',
       homeTeamFifaCode: 'BRA',
       awayTeamFifaCode: 'ARG',
-      providerStatus: 'NS',
       status: 'Active',
+      resultConfirmed: true,
     },
     {
       id: 'old',
-      providerFixtureId: 1,
       kickoff: '2026-07-01T18:00:00Z',
       homeTeamFifaCode: 'GER',
       awayTeamFifaCode: 'FRA',
-      providerStatus: 'FT',
       status: 'Closed',
+      resultConfirmed: true,
     },
     {
       id: 'other',
-      providerFixtureId: 4,
       kickoff: '2026-07-04T18:00:00Z',
       homeTeamFifaCode: 'GER',
       awayTeamFifaCode: 'ARG',
-      providerStatus: 'NS',
       status: 'Archived',
+      resultConfirmed: true,
     },
   ],
 }
@@ -54,12 +48,13 @@ const matches: AdminMatchesResponse = {
 function api(overrides: Partial<AdminApi> = {}): AdminApi {
   return {
     getAdminMatches: vi.fn().mockResolvedValue(matches),
-    syncWorldCupMatches: vi.fn(),
     createAdminMatch: vi.fn(),
+    updateAdminMatch: vi.fn(),
     getAdminResult: vi.fn(),
     getProvisionalLeaderboard: vi.fn(),
     saveAdminResult: vi.fn(),
     confirmResult: vi.fn(),
+    finishMatch: vi.fn(),
     ...overrides,
   }
 }
@@ -68,15 +63,23 @@ function renderPage(adminApi: AdminApi) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
+  const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
   render(
     <QueryClientProvider client={queryClient}>
       <AdminMatchesPage api={adminApi} />
     </QueryClientProvider>,
   )
+  return { invalidateQueries }
+}
+
+async function finishActiveMatch() {
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'Finalizar jogo atual' }))
+  await user.click(screen.getByRole('button', { name: 'Finalizar jogo' }))
 }
 
 describe('AdminMatchesPage', () => {
-  it('shows ordered matches, all statuses, and result links', async () => {
+  it('shows ordered matches and lifecycle statuses without provider controls', async () => {
     renderPage(api())
 
     const links = await screen.findAllByRole('link', { name: 'Apurar resultado' })
@@ -89,163 +92,140 @@ describe('AdminMatchesPage', () => {
     for (const status of ['Encerrado', 'Ativo', 'Próximo', 'Arquivado']) {
       expect(screen.getByText(status)).toBeInTheDocument()
     }
-    expect(screen.getByText(/consultará o API-Football/i)).toBeInTheDocument()
+    expect(screen.queryByText(/API-Football/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /sincronizar/i })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('ID do fixture')).not.toBeInTheDocument()
   })
 
-  it('reports provider synchronization counts and skipped fixtures', async () => {
+  it('creates a match without provider data', async () => {
     const user = userEvent.setup()
-    const syncWorldCupMatches = vi.fn().mockResolvedValue({
-      providerFetchPerformed: true,
-      lastSuccessfulSyncAt: '2026-06-30T08:00:00Z',
-      createdCount: 3,
-      updatedCount: 2,
-      statusChangeCount: 1,
-      skippedFixtures: [
-        { fixtureId: 99, reasonCode: 'unsupported_team_code' },
-        { fixtureId: 100, reasonCode: 'missing_fifa_code' },
-      ],
-    })
-    renderPage(api({
-      getAdminMatches: vi.fn()
-        .mockResolvedValueOnce(matches)
-        .mockResolvedValueOnce({ ...matches, providerCallAvailable: false }),
-      syncWorldCupMatches,
-    }))
-
-    await user.click(await screen.findByRole('button', { name: 'Sincronizar jogos' }))
-
-    expect(await screen.findByText(/3 criados, 2 atualizados e 1 status alterado/i)).toBeInTheDocument()
-    expect(screen.getByText(/Fixture 99: um dos códigos FIFA não é suportado/i)).toBeInTheDocument()
-    expect(screen.getByText(/Fixture 100: está faltando um código FIFA/i)).toBeInTheDocument()
-    expect(screen.getByText(/A próxima sincronização hoje apenas recalculará os status/i)).toBeInTheDocument()
-  })
-
-  it('explains a same-day local recalculation and keeps sync available', async () => {
-    const user = userEvent.setup()
-    const syncWorldCupMatches = vi.fn().mockResolvedValue({
-      providerFetchPerformed: false,
-      lastSuccessfulSyncAt: '2026-06-30T08:00:00Z',
-      createdCount: 0,
-      updatedCount: 0,
-      statusChangeCount: 2,
-      skippedFixtures: [],
-    })
-    renderPage(api({
-      getAdminMatches: vi.fn().mockResolvedValue({
-        ...matches,
-        providerCallAvailable: false,
-        lastSuccessfulSyncAt: '2026-06-30T08:00:00Z',
-      }),
-      syncWorldCupMatches,
-    }))
-
-    expect(await screen.findByText(/apenas recalculará os status/i)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Sincronizar jogos' }))
-
-    expect(await screen.findByText(/Nenhuma consulta ao API-Football foi feita.*2 status alterados/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sincronizar jogos' })).toBeEnabled()
-  })
-
-  it('uses the authoritative refetched availability after synchronization', async () => {
-    const user = userEvent.setup()
-    const getAdminMatches = vi.fn()
-      .mockResolvedValueOnce({ ...matches, providerCallAvailable: false })
-      .mockResolvedValueOnce({ ...matches, providerCallAvailable: true })
-    renderPage(api({
-      getAdminMatches,
-      syncWorldCupMatches: vi.fn().mockResolvedValue({
-        providerFetchPerformed: false,
-        lastSuccessfulSyncAt: '2026-06-30T08:00:00Z',
-        createdCount: 0,
-        updatedCount: 0,
-        statusChangeCount: 0,
-        skippedFixtures: [],
-      }),
-    }))
-
-    expect(await screen.findByText(/apenas recalculará os status/i)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Sincronizar jogos' }))
-
-    expect(await screen.findByText(/consultará o API-Football/i)).toBeInTheDocument()
-    expect(getAdminMatches).toHaveBeenCalledTimes(2)
-  })
-
-  it('validates the manual form before submitting', async () => {
-    const user = userEvent.setup()
-    const createAdminMatch = vi.fn()
-    renderPage(api({ createAdminMatch }))
-
-    await user.click(await screen.findByRole('button', { name: 'Adicionar jogo' }))
-
-    const error = screen.getByRole('alert')
-    expect(error).toHaveTextContent('Preencha todos os campos obrigatórios.')
-    expect(screen.getByLabelText('ID do jogo')).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByLabelText('ID do jogo')).toHaveAttribute('aria-describedby', error.id)
-    expect(createAdminMatch).not.toHaveBeenCalled()
-  })
-
-  it.each(['0', '-1', '1.5'])('rejects invalid fixture ID %s', async fixtureId => {
-    const user = userEvent.setup()
-    const createAdminMatch = vi.fn()
+    const createAdminMatch = vi.fn().mockResolvedValue(undefined)
     renderPage(api({ createAdminMatch }))
 
     await screen.findByText('Adicionar jogo manualmente')
     await user.type(screen.getByLabelText('ID do jogo'), 'manual-1')
-    await user.type(screen.getByLabelText('ID do fixture'), fixtureId)
-    await user.type(screen.getByLabelText('Data e hora em Europe/Berlin'), '2026-07-01T18:00')
-    await user.type(screen.getByLabelText('Mandante'), 'BRA')
-    await user.type(screen.getByLabelText('Visitante'), 'ARG')
-    await user.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-
-    const error = screen.getByRole('alert')
-    expect(error).toHaveTextContent('Informe um ID de fixture inteiro e positivo.')
-    expect(screen.getByLabelText('ID do fixture')).toHaveAttribute('aria-invalid', 'true')
-    expect(createAdminMatch).not.toHaveBeenCalled()
-  })
-
-  it('retains manual values on failure and clears them after success', async () => {
-    const user = userEvent.setup()
-    const createAdminMatch = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("Match 'manual-1' already exists."))
-      .mockResolvedValueOnce(undefined)
-    renderPage(api({ createAdminMatch }))
-
-    await screen.findByText('Adicionar jogo manualmente')
-    await user.type(screen.getByLabelText('ID do jogo'), 'manual-1')
-    await user.type(screen.getByLabelText('ID do fixture'), '123')
     await user.type(screen.getByLabelText('Data e hora em Europe/Berlin'), '2026-06-15T18:00')
     await user.type(screen.getByLabelText('Mandante'), 'bra')
     await user.type(screen.getByLabelText('Visitante'), 'arg')
     await user.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
 
-    expect(await screen.findByText("Match 'manual-1' already exists.")).toBeInTheDocument()
-    expect(screen.getByLabelText('ID do jogo')).toHaveValue('manual-1')
-
-    await user.click(screen.getByRole('button', { name: 'Adicionar jogo' }))
-
-    expect(await screen.findByText('Jogo adicionado.')).toBeInTheDocument()
-    expect(screen.getByLabelText('ID do jogo')).toHaveValue('')
-    expect(createAdminMatch).toHaveBeenLastCalledWith(expect.objectContaining({
+    await waitFor(() => expect(createAdminMatch).toHaveBeenCalledWith({
       id: 'manual-1',
-      providerFixtureId: 123,
       homeTeamFifaCode: 'BRA',
       awayTeamFifaCode: 'ARG',
       kickoff: '2026-06-15T16:00:00.000Z',
+      prizeHandedOverAt: null,
     }))
-    expect(screen.getByRole('status')).toHaveTextContent('Jogo adicionado.')
+    expect(await screen.findByText('Jogo adicionado.')).toBeInTheDocument()
   })
 
-  it('shows phase-aware sync errors', async () => {
+  it('edits kickoff and teams while keeping the match ID immutable', async () => {
+    const user = userEvent.setup()
+    const updateAdminMatch = vi.fn().mockResolvedValue(undefined)
+    const { invalidateQueries } = renderPage(api({ updateAdminMatch }))
+
+    await user.click((await screen.findAllByRole('button', { name: 'Editar jogo' }))[1])
+
+    const immutableId = screen.getByText('ID do jogo: active')
+    expect(immutableId).toBeInTheDocument()
+    expect(within(immutableId.closest('[data-slot="card"]')!).queryByRole('textbox', { name: 'ID do jogo' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Data e hora do jogo em Europe/Berlin')).toHaveValue('2026-07-02T20:00')
+
+    await user.clear(screen.getByLabelText('Data e hora do jogo em Europe/Berlin'))
+    await user.type(screen.getByLabelText('Data e hora do jogo em Europe/Berlin'), '2026-07-05T18:30')
+    await user.clear(screen.getByLabelText('Mandante do jogo'))
+    await user.type(screen.getByLabelText('Mandante do jogo'), 'ger')
+    await user.clear(screen.getByLabelText('Visitante do jogo'))
+    await user.type(screen.getByLabelText('Visitante do jogo'), 'fra')
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+
+    await waitFor(() => expect(updateAdminMatch).toHaveBeenCalledWith('active', {
+      kickoff: '2026-07-05T16:30:00.000Z',
+      homeTeamFifaCode: 'GER',
+      awayTeamFifaCode: 'FRA',
+      prizeHandedOverAt: null,
+    }))
+    expect(await screen.findByText('Jogo atualizado.')).toBeInTheDocument()
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['admin-matches'] })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['current-match'] })
+  })
+
+  it('cancels editing without saving', async () => {
+    const user = userEvent.setup()
+    const updateAdminMatch = vi.fn()
+    renderPage(api({ updateAdminMatch }))
+
+    await user.click((await screen.findAllByRole('button', { name: 'Editar jogo' }))[0])
+    await user.click(screen.getByRole('button', { name: 'Cancelar edição' }))
+
+    expect(screen.queryByText('Editar jogo cadastrado')).not.toBeInTheDocument()
+    expect(updateAdminMatch).not.toHaveBeenCalled()
+  })
+
+  it('keeps edit values and shows API errors', async () => {
     const user = userEvent.setup()
     renderPage(api({
-      syncWorldCupMatches: vi.fn().mockRejectedValue(new Error(
-        'Os jogos foram importados, mas os status não foram atualizados. Tente sincronizar novamente.',
-      )),
+      updateAdminMatch: vi.fn().mockRejectedValue(new Error('Jogo não encontrado.')),
     }))
 
-    await user.click(await screen.findByRole('button', { name: 'Sincronizar jogos' }))
+    await user.click((await screen.findAllByRole('button', { name: 'Editar jogo' }))[0])
+    await user.clear(screen.getByLabelText('Mandante do jogo'))
+    await user.type(screen.getByLabelText('Mandante do jogo'), 'arg')
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
 
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/Os jogos foram importados/i))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Jogo não encontrado.')
+    expect(screen.getByLabelText('Mandante do jogo')).toHaveValue('arg')
+  })
+
+  it('shows the finish action only for the active match', async () => {
+    renderPage(api())
+
+    expect(await screen.findAllByRole('button', { name: 'Finalizar jogo atual' })).toHaveLength(1)
+  })
+
+  it('disables finishing until the active result is confirmed', async () => {
+    renderPage(api({
+      getAdminMatches: vi.fn().mockResolvedValue({
+        matches: matches.matches.map(match => match.id === 'active'
+          ? { ...match, resultConfirmed: false }
+          : match),
+      }),
+    }))
+
+    expect(await screen.findByRole('button', { name: 'Finalizar jogo atual' })).toBeDisabled()
+    expect(screen.getByText('Confirme o resultado antes de finalizar o jogo.')).toBeInTheDocument()
+  })
+
+  it('reports the next activated match and refreshes lifecycle queries', async () => {
+    const finishMatch = vi.fn().mockResolvedValue({ closedMatchId: 'active', activatedMatchId: 'later' })
+    const { invalidateQueries } = renderPage(api({ finishMatch }))
+
+    await finishActiveMatch()
+
+    expect(finishMatch).toHaveBeenCalledWith('active')
+    expect(await screen.findByText('Jogo finalizado. Próximo jogo ativado: later.')).toBeInTheDocument()
+    for (const queryKey of ['admin-matches', 'current-match', 'match-history', 'leaderboard']) {
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: [queryKey] })
+    }
+  })
+
+  it('asks the admin to add a match when none was activated', async () => {
+    renderPage(api({
+      finishMatch: vi.fn().mockResolvedValue({ closedMatchId: 'active', activatedMatchId: null }),
+    }))
+
+    await finishActiveMatch()
+
+    expect(await screen.findByText('Jogo finalizado. Adicione o próximo jogo.')).toBeInTheDocument()
+  })
+
+  it('shows a finish failure returned by the API', async () => {
+    renderPage(api({
+      finishMatch: vi.fn().mockRejectedValue(new Error('O jogo selecionado não está ativo.')),
+    }))
+
+    await finishActiveMatch()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('O jogo selecionado não está ativo.')
   })
 })

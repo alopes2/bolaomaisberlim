@@ -1,7 +1,3 @@
-# Supply this through the TF_VAR_api_football_key environment variable.
-# Do not store the real key in this file.
-# api_football_key = "replace-via-github-secret"
-
 # Supply real administrator emails through TF_VAR_admin_emails as a JSON array.
 # admin_emails = ["admin1@example.com", "admin2@example.com"]
 

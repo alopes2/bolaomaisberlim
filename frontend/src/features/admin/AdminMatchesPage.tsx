@@ -3,18 +3,29 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import type {
   AdminApi,
+  AdminMatch,
   CreateAdminMatchRequest,
   MatchStatus,
-  WorldCupSkipReasonCode,
-  WorldCupSyncResponse,
+  UpdateAdminMatchRequest,
 } from '@/api/client'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { berlinLocalToIso } from '@/lib/berlinTime'
+import { berlinLocalToIso, isoToBerlinLocal } from '@/lib/berlinTime'
 
 const statusLabels: Record<MatchStatus, string> = {
   Active: 'Ativo',
@@ -25,15 +36,15 @@ const statusLabels: Record<MatchStatus, string> = {
 
 type ManualForm = {
   id: string
-  providerFixtureId: string
   kickoff: string
   homeTeamFifaCode: string
   awayTeamFifaCode: string
 }
 
+type EditForm = Omit<ManualForm, 'id'>
+
 const emptyForm: ManualForm = {
   id: '',
-  providerFixtureId: '',
   kickoff: '',
   homeTeamFifaCode: '',
   awayTeamFifaCode: '',
@@ -43,13 +54,12 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
   const queryClient = useQueryClient()
   const [form, setForm] = useState<ManualForm>(emptyForm)
   const [formValidation, setFormValidation] = useState<string | null>(null)
+  const [editingMatchId, setEditingMatchId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<EditForm | null>(null)
+  const [editValidation, setEditValidation] = useState<string | null>(null)
   const matchesQuery = useQuery({
     queryKey: ['admin-matches'],
     queryFn: () => api.getAdminMatches(),
-  })
-  const sync = useMutation({
-    mutationFn: () => api.syncWorldCupMatches(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-matches'] }),
   })
   const create = useMutation({
     mutationFn: (request: CreateAdminMatchRequest) => api.createAdminMatch(request),
@@ -59,6 +69,25 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
       void queryClient.invalidateQueries({ queryKey: ['admin-matches'] })
     },
   })
+  const finish = useMutation({
+    mutationFn: (matchId: string) => api.finishMatch(matchId),
+    onSuccess: () => {
+      for (const queryKey of ['admin-matches', 'current-match', 'match-history', 'leaderboard']) {
+        void queryClient.invalidateQueries({ queryKey: [queryKey] })
+      }
+    },
+  })
+  const update = useMutation({
+    mutationFn: ({ matchId, request }: { matchId: string; request: UpdateAdminMatchRequest }) =>
+      api.updateAdminMatch(matchId, request),
+    onSuccess: () => {
+      setEditingMatchId(null)
+      setEditForm(null)
+      setEditValidation(null)
+      void queryClient.invalidateQueries({ queryKey: ['admin-matches'] })
+      void queryClient.invalidateQueries({ queryKey: ['current-match'] })
+    },
+  })
 
   function setField(field: keyof ManualForm, value: string) {
     setForm(current => ({ ...current, [field]: value }))
@@ -66,17 +95,11 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const fixtureId = Number(form.providerFixtureId)
-    if (!form.id.trim() || !form.providerFixtureId || !form.kickoff
+    if (!form.id.trim() || !form.kickoff
       || !form.homeTeamFifaCode.trim() || !form.awayTeamFifaCode.trim()) {
       setFormValidation('Preencha todos os campos obrigatórios.')
       return
     }
-    if (!Number.isInteger(fixtureId) || fixtureId <= 0) {
-      setFormValidation('Informe um ID de fixture inteiro e positivo.')
-      return
-    }
-
     let kickoff: string
     try {
       kickoff = berlinLocalToIso(form.kickoff)
@@ -88,11 +111,55 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
     setFormValidation(null)
     create.mutate({
       id: form.id.trim(),
-      providerFixtureId: fixtureId,
       kickoff,
       homeTeamFifaCode: form.homeTeamFifaCode.trim().toUpperCase(),
       awayTeamFifaCode: form.awayTeamFifaCode.trim().toUpperCase(),
       prizeHandedOverAt: null,
+    })
+  }
+
+  function startEditing(match: AdminMatch) {
+    update.reset()
+    setEditValidation(null)
+    setEditingMatchId(match.id)
+    setEditForm({
+      kickoff: isoToBerlinLocal(match.kickoff),
+      homeTeamFifaCode: match.homeTeamFifaCode,
+      awayTeamFifaCode: match.awayTeamFifaCode,
+    })
+  }
+
+  function cancelEditing() {
+    setEditingMatchId(null)
+    setEditForm(null)
+    setEditValidation(null)
+    update.reset()
+  }
+
+  function handleEditSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editingMatchId || !editForm) return
+    if (!editForm.kickoff || !editForm.homeTeamFifaCode.trim()
+      || !editForm.awayTeamFifaCode.trim()) {
+      setEditValidation('Preencha todos os campos obrigatórios.')
+      return
+    }
+    let kickoff: string
+    try {
+      kickoff = berlinLocalToIso(editForm.kickoff)
+    } catch (error) {
+      setEditValidation(errorMessage(error))
+      return
+    }
+    setEditValidation(null)
+    update.mutate({
+      matchId: editingMatchId,
+      request: {
+        kickoff,
+        homeTeamFifaCode: editForm.homeTeamFifaCode.trim().toUpperCase(),
+        awayTeamFifaCode: editForm.awayTeamFifaCode.trim().toUpperCase(),
+        prizeHandedOverAt: null,
+      },
     })
   }
 
@@ -105,45 +172,18 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
 
   const sortedMatches = [...matchesQuery.data.matches].sort((left, right) =>
     left.kickoff.localeCompare(right.kickoff) || left.id.localeCompare(right.id))
-  const providerCallAvailable = matchesQuery.data.providerCallAvailable
-  const lastSuccessfulSyncAt = matchesQuery.data.lastSuccessfulSyncAt
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 sm:p-8">
       <Card>
         <CardHeader>
-          <CardTitle>Sincronizar Copa do Mundo</CardTitle>
-          <CardDescription>
-            {providerCallAvailable
-              ? 'A próxima sincronização consultará o API-Football e recalculará os status.'
-              : 'A próxima sincronização hoje apenas recalculará os status, sem consultar o API-Football.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col items-start gap-3">
-          {lastSuccessfulSyncAt ? (
-            <p className="text-sm text-muted-foreground" role="status">
-              Última sincronização bem-sucedida: {new Date(lastSuccessfulSyncAt).toLocaleString('pt-BR')}
-            </p>
-          ) : null}
-          <Button onClick={() => sync.mutate()} disabled={sync.isPending}>
-            {sync.isPending ? 'Sincronizando…' : 'Sincronizar jogos'}
-          </Button>
-          {sync.data ? <SyncFeedback result={sync.data} /> : null}
-          {sync.isError ? <p className="text-sm text-destructive" role="alert">{errorMessage(sync.error)}</p> : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Adicionar jogo manualmente</CardTitle>
-          <CardDescription>Use esta opção quando o fixture não estiver disponível na sincronização.</CardDescription>
+          <CardDescription>Cadastre o próximo jogo e sua data de início.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit} noValidate>
             <Field label="ID do jogo" value={form.id} onChange={value => setField('id', value)} invalid={isInvalidField('id', form, formValidation)} />
-            <Field label="ID do fixture" type="number" value={form.providerFixtureId} onChange={value => setField('providerFixtureId', value)} invalid={isInvalidField('providerFixtureId', form, formValidation)} />
             <Field label="Data e hora em Europe/Berlin" type="datetime-local" value={form.kickoff} onChange={value => setField('kickoff', value)} invalid={isInvalidField('kickoff', form, formValidation)} />
-            <div />
             <Field label="Mandante" value={form.homeTeamFifaCode} onChange={value => setField('homeTeamFifaCode', value)} invalid={isInvalidField('homeTeamFifaCode', form, formValidation)} />
             <Field label="Visitante" value={form.awayTeamFifaCode} onChange={value => setField('awayTeamFifaCode', value)} invalid={isInvalidField('awayTeamFifaCode', form, formValidation)} />
             <div className="flex flex-col items-start gap-2 sm:col-span-2">
@@ -158,12 +198,68 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
         </CardContent>
       </Card>
 
+      {editingMatchId && editForm ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Editar jogo cadastrado</CardTitle>
+            <CardDescription>ID do jogo: {editingMatchId}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleEditSubmit} noValidate>
+              <Field
+                label="Data e hora do jogo em Europe/Berlin"
+                type="datetime-local"
+                value={editForm.kickoff}
+                onChange={value => setEditForm(current => current ? { ...current, kickoff: value } : current)}
+                invalid={Boolean(editValidation && (!editForm.kickoff || editValidation.includes('Europe/Berlin') || editValidation === 'Data e hora inválidas.'))}
+                errorId="edit-form-error"
+              />
+              <Field
+                label="Mandante do jogo"
+                value={editForm.homeTeamFifaCode}
+                onChange={value => setEditForm(current => current ? { ...current, homeTeamFifaCode: value } : current)}
+                invalid={Boolean(editValidation && !editForm.homeTeamFifaCode.trim())}
+                errorId="edit-form-error"
+              />
+              <Field
+                label="Visitante do jogo"
+                value={editForm.awayTeamFifaCode}
+                onChange={value => setEditForm(current => current ? { ...current, awayTeamFifaCode: value } : current)}
+                invalid={Boolean(editValidation && !editForm.awayTeamFifaCode.trim())}
+                errorId="edit-form-error"
+              />
+              <div className="flex flex-col items-start gap-2 sm:col-span-2">
+                {editValidation ? <p id="edit-form-error" className="text-sm text-destructive" role="alert">{editValidation}</p> : null}
+                {update.isError ? <p className="text-sm text-destructive" role="alert">{errorMessage(update.error)}</p> : null}
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={update.isPending}>
+                    {update.isPending ? 'Salvando…' : 'Salvar alterações'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={cancelEditing} disabled={update.isPending}>
+                    Cancelar edição
+                  </Button>
+                </div>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Jogos</CardTitle>
           <CardDescription>{sortedMatches.length} jogos cadastrados.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          {finish.data ? (
+            <p className="text-sm" role="status">
+              {finish.data.activatedMatchId
+                ? `Jogo finalizado. Próximo jogo ativado: ${finish.data.activatedMatchId}.`
+                : 'Jogo finalizado. Adicione o próximo jogo.'}
+            </p>
+          ) : null}
+          {finish.isError ? <p className="text-sm text-destructive" role="alert">{errorMessage(finish.error)}</p> : null}
+          {update.isSuccess ? <p className="text-sm" role="status">Jogo atualizado.</p> : null}
           {sortedMatches.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum jogo cadastrado.</p> : null}
           {sortedMatches.map(match => (
             <div key={match.id} className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -176,9 +272,44 @@ export function AdminMatchesPage({ api }: { api: AdminApi }) {
                   {new Date(match.kickoff).toLocaleString('pt-BR')} · {match.id}
                 </span>
               </div>
-              <Button asChild variant="outline" size="sm">
-                <a href={`/admin?matchId=${encodeURIComponent(match.id)}`}>Apurar resultado</a>
-              </Button>
+              <div className="flex flex-col items-start gap-2 sm:items-end">
+                <Button type="button" variant="outline" size="sm" onClick={() => startEditing(match)}>
+                  Editar jogo
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <a href={`/admin?matchId=${encodeURIComponent(match.id)}`}>Apurar resultado</a>
+                </Button>
+                {match.status === 'Active' ? (
+                  <>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" disabled={!match.resultConfirmed || finish.isPending}>
+                          Finalizar jogo atual
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Finalizar o jogo atual?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            O jogo será encerrado e o próximo jogo cadastrado será ativado.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => finish.mutate(match.id)}>
+                            Finalizar jogo
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    {!match.resultConfirmed ? (
+                      <p className="text-sm text-muted-foreground">
+                        Confirme o resultado antes de finalizar o jogo.
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
             </div>
           ))}
         </CardContent>
@@ -193,12 +324,14 @@ function Field({
   value,
   onChange,
   invalid = false,
+  errorId = 'manual-form-error',
 }: {
   label: string
   type?: string
   value: string
   onChange(value: string): void
   invalid?: boolean
+  errorId?: string
 }) {
   const id = label.toLowerCase().replaceAll(' ', '-')
   return (
@@ -209,26 +342,9 @@ function Field({
         type={type}
         value={value}
         aria-invalid={invalid}
-        aria-describedby={invalid ? 'manual-form-error' : undefined}
+        aria-describedby={invalid ? errorId : undefined}
         onChange={event => onChange(event.target.value)}
       />
-    </div>
-  )
-}
-
-function SyncFeedback({ result }: { result: WorldCupSyncResponse }) {
-  return (
-    <div className="text-sm" role="status">
-      <p>
-        {result.providerFetchPerformed
-          ? `${result.createdCount} criados, ${result.updatedCount} atualizados e ${result.statusChangeCount} status alterado${result.statusChangeCount === 1 ? '' : 's'}.`
-          : `Nenhuma consulta ao API-Football foi feita; ${result.statusChangeCount} status alterado${result.statusChangeCount === 1 ? '' : 's'}.`}
-      </p>
-      {result.skippedFixtures.map(fixture => (
-        <p key={fixture.fixtureId} className="text-muted-foreground">
-          Fixture {fixture.fixtureId}: {skipReason(fixture.reasonCode)}
-        </p>
-      ))}
     </div>
   )
 }
@@ -237,17 +353,8 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Ocorreu um erro inesperado.'
 }
 
-function skipReason(reasonCode: WorldCupSkipReasonCode) {
-  return reasonCode === 'missing_fifa_code'
-    ? 'está faltando um código FIFA.'
-    : 'um dos códigos FIFA não é suportado.'
-}
-
 function isInvalidField(field: keyof ManualForm, form: ManualForm, validation: string | null) {
   if (!validation) return false
-  if (validation === 'Informe um ID de fixture inteiro e positivo.') {
-    return field === 'providerFixtureId'
-  }
   if (validation.includes('Europe/Berlin') || validation === 'Data e hora inválidas.') {
     return field === 'kickoff'
   }

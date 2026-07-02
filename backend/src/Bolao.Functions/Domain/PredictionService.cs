@@ -24,6 +24,7 @@ public class PredictionService(
         }
 
         ValidateCounts(answers);
+        ValidatePenaltyWinner(answers, match);
 
         var homeTeam = await rosters.GetTeamAsync(match.HomeTeamFifaCode, cancellationToken);
         var awayTeam = await rosters.GetTeamAsync(match.AwayTeamFifaCode, cancellationToken);
@@ -47,6 +48,29 @@ public class PredictionService(
             || answers.AwayRedCards < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(answers), "Goal and card counts cannot be negative.");
+        }
+    }
+
+    private static void ValidatePenaltyWinner(PredictionAnswers answers, Match match)
+    {
+        if (answers.PenaltyWinnerTeamFifaCode is null)
+        {
+            return;
+        }
+
+        if (answers.HomeGoals != answers.AwayGoals)
+        {
+            throw new ArgumentException(
+                "A penalty winner can only be selected for a draw prediction.",
+                nameof(answers));
+        }
+
+        if (answers.PenaltyWinnerTeamFifaCode != match.HomeTeamFifaCode
+            && answers.PenaltyWinnerTeamFifaCode != match.AwayTeamFifaCode)
+        {
+            throw new ArgumentException(
+                "The penalty winner must be one of the teams in the match.",
+                nameof(answers));
         }
     }
 

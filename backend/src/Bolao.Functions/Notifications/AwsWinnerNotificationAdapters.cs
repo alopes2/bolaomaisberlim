@@ -112,7 +112,7 @@ public class DynamoCognitoWinnerLookup(
                 Score = ScoreCalculator.Score(prediction.Answers, result)
             })
             .OrderByDescending(item => item.Score.Total)
-            .ThenByDescending(item => item.Score.Result == 5)
+            .ThenByDescending(item => item.Score.ExactScore)
             .ThenByDescending(item => item.Score.FirstScorer == 3)
             .ThenBy(item => item.Prediction.SubmittedAt)
             .FirstOrDefault()

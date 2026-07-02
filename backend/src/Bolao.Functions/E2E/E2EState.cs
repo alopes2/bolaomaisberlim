@@ -1,7 +1,6 @@
 using Bolao.Functions.Admin;
 using Bolao.Functions.Api;
 using Bolao.Functions.Domain;
-using Bolao.Functions.Jobs;
 using Bolao.Functions.Notifications;
 using Bolao.Functions.Persistence;
 
@@ -14,9 +13,6 @@ public class E2EState
         IPredictionRepository,
         IAdminApi,
         IMatchManagementStore,
-        IWorldCupSyncService,
-        IWorldCupSyncLock,
-        IMatchScheduleService,
         IResultConfirmationStore,
         IConfirmedResultPublisher,
         IWinnerNotificationService
@@ -25,7 +21,8 @@ public class E2EState
     private readonly Dictionary<string, string> publicNames = [];
     private readonly Dictionary<(string MatchId, string ParticipantId), StoredPrediction> predictions = [];
     private Match match;
-    private ProvisionalResult provisional = null!;
+    private ConfirmedResult provisional = null!;
+    private ManualResultDraft manualResult = null!;
     private LeaderboardResponse confirmedLeaderboard = new([], null);
     private int resultVersion;
 
@@ -47,15 +44,22 @@ public class E2EState
             confirmedLeaderboard = new LeaderboardResponse([], null);
             match = match with { Kickoff = DateTimeOffset.UtcNow.AddMinutes(30) };
         }
-        provisional = new ProvisionalResult(
-            new ConfirmedResult(
-                2, 1, null,
-                new HashSet<string> { "BRA:11" },
-                new HashSet<string> { "MEX:9" },
-                2, 3, 0, 1),
-            [new UnresolvedPlayerMapping(11, "Raphinha API", "BRA")],
+        provisional = new ConfirmedResult(
+            2, 1, null,
+            new HashSet<string> { "BRA:11" },
+            new HashSet<string> { "MEX:9" },
+            2, 3, 0, 1);
+        manualResult = new ManualResultDraft(
+            [
+                new ManualGoal("BRA", "BRA:11"),
+                new ManualGoal("BRA", "BRA:11"),
+                new ManualGoal("MEX", "MEX:9")
+            ],
             2,
-            1);
+            3,
+            0,
+            1,
+            null);
         publicNames["other"] = "Bruno B.";
         predictions[(match.Id, "other")] = new StoredPrediction(
             match.Id,
@@ -158,71 +162,37 @@ public class E2EState
         }
     }
 
-    public Task CreateMatchAsync(AdminMatchRequest request, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
-
     public Task<IReadOnlyList<ManagedMatch>> ListAsync(CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<ManagedMatch>>([
             new ManagedMatch(
-                match.Id, 1, match.Kickoff, match.HomeTeamFifaCode,
-                match.AwayTeamFifaCode, "NS", match.Status)
+                match.Id, match.Kickoff, match.HomeTeamFifaCode,
+                match.AwayTeamFifaCode, match.Status ?? MatchStatus.Archived, resultVersion > 0)
         ]);
 
-    public Task CreateManualAsync(ManagedMatch managedMatch, CancellationToken cancellationToken)
+    public Task<ManagedMatch> CreateManualAsync(ManagedMatch managedMatch, CancellationToken cancellationToken)
     {
-        match = managedMatch.ToMatch();
-        return Task.CompletedTask;
+        var created = managedMatch with { Status = match.Status == MatchStatus.Active ? MatchStatus.Upcoming : MatchStatus.Active };
+        match = created.ToMatch();
+        return Task.FromResult(created);
     }
 
-    public Task<bool> UpsertProviderAsync(
-        ManagedMatch managedMatch, CancellationToken cancellationToken) => Task.FromResult(true);
-
-    public Task UpdateStatusAsync(
-        string matchId, MatchStatus status, CancellationToken cancellationToken)
+    public Task<MatchLifecycleResult> FinishAsync(string matchId, CancellationToken cancellationToken)
     {
-        if (match.Id == matchId) match = match with { Status = status };
-        return Task.CompletedTask;
+        if (match.Id != matchId || match.Status != MatchStatus.Active)
+            throw new MatchNotActiveException(matchId);
+        if (resultVersion == 0)
+            throw new ConfirmedResultRequiredException(matchId);
+        match = match with { Status = MatchStatus.Closed };
+        return Task.FromResult(new MatchLifecycleResult(matchId, null));
     }
-
-    public Task<WorldCupSyncResult> SyncAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(new WorldCupSyncResult(false, Time.GetUtcNow(), 0, 0, 0, []));
-
-    public Task<WorldCupSyncClaim?> TryClaimAsync(
-        DateTimeOffset now, CancellationToken cancellationToken) =>
-        Task.FromResult<WorldCupSyncClaim?>(null);
-
-    public Task CompleteAsync(
-        WorldCupSyncClaim claim, DateTimeOffset completedAt, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
-
-    public Task ReleaseAsync(WorldCupSyncClaim claim, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
-
-    public Task<WorldCupSyncLockStatus> GetStatusAsync(
-        DateTimeOffset now, CancellationToken cancellationToken) =>
-        Task.FromResult(new WorldCupSyncLockStatus(Time.GetUtcNow(), false));
-
-    public Task EnsureAsync(PollingMatch pollingMatch, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
-
-    public Task DeleteAsync(string matchId, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
 
     public Task UpdateMatchAsync(
         string matchId,
         AdminMatchRequest request,
         CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public Task SyncMatchAsync(string matchId, CancellationToken cancellationToken) =>
-        Task.CompletedTask;
-
-    public Task<object?> GetRawResultAsync(string matchId, CancellationToken cancellationToken) =>
-        Task.FromResult<object?>(new AdminRawResult(
-            "FT",
-            provisional.Result,
-            provisional.UnresolvedPlayers,
-            provisional.HomeGoalEvents,
-            provisional.AwayGoalEvents));
+    public Task<ManualResultDraft?> GetResultAsync(string matchId, CancellationToken cancellationToken) =>
+        Task.FromResult<ManualResultDraft?>(manualResult);
 
     public async Task<LeaderboardResponse> GetProvisionalLeaderboardAsync(
         string matchId,
@@ -232,7 +202,7 @@ public class E2EState
             .Select(prediction => new
             {
                 Prediction = prediction,
-                Score = ScoreCalculator.Score(prediction.Answers, provisional.Result)
+                Score = ScoreCalculator.Score(prediction.Answers, provisional)
             })
             .OrderByDescending(item => item.Score.Total)
             .ThenBy(item => item.Prediction.SubmittedAt)
@@ -241,7 +211,7 @@ public class E2EState
             index + 1,
             publicNames.GetValueOrDefault(item.Prediction.ParticipantId, "Participante"),
             item.Score.Total,
-            item.Score.Result == 5 ? 1 : 0,
+            item.Score.ExactScore ? 1 : 0,
             item.Score.FirstScorer == 3 ? 1 : 0)).ToArray();
         return new LeaderboardResponse(
             entries,
@@ -250,16 +220,20 @@ public class E2EState
 
     public Task SaveResultAsync(
         string matchId,
-        ProvisionalResult result,
+        ManualResultDraft result,
         CancellationToken cancellationToken)
     {
-        provisional = result;
+        manualResult = result;
         return Task.CompletedTask;
     }
 
-    public Task<ProvisionalResult?> GetProvisionalAsync(
+    public Task<ManualResultForConfirmation?> GetManualResultAsync(
         string matchId,
-        CancellationToken cancellationToken) => Task.FromResult<ProvisionalResult?>(provisional);
+        CancellationToken cancellationToken) => Task.FromResult<ManualResultForConfirmation?>(
+            new ManualResultForConfirmation(
+                match.HomeTeamFifaCode,
+                match.AwayTeamFifaCode,
+                manualResult));
 
     public Task<ConfirmationClaim> ClaimConfirmationAsync(
         string matchId,

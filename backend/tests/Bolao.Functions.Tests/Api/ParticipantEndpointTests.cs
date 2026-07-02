@@ -9,7 +9,6 @@ using Bolao.Functions.Admin;
 using Bolao.Functions.Domain;
 using Bolao.Functions.Persistence;
 using Bolao.Functions.Rosters;
-using Bolao.Functions.Jobs;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -26,7 +25,7 @@ namespace Bolao.Functions.Tests.Api;
 public class ParticipantEndpointTests
 {
     [Fact]
-    public async Task CurrentMatchPrefersLatestClosedUnpublishedProvisionalResult()
+    public async Task CurrentMatchIgnoresClosedLegacyProvisionalResult()
     {
         var queries = QueriesWithMatches(
             MatchItem("active", ApiFactory.Kickoff.AddDays(2), MatchStatus.Active),
@@ -35,7 +34,7 @@ public class ParticipantEndpointTests
 
         var result = await queries.GetCurrentMatchAsync(default);
 
-        result!.Id.Should().Be("closed-latest");
+        result!.Id.Should().Be("active");
     }
 
     [Fact]
@@ -52,7 +51,7 @@ public class ParticipantEndpointTests
     }
 
     [Fact]
-    public async Task CurrentMatchUsesOrdinalIdTieBreakAcrossScanPages()
+    public async Task CurrentMatchReturnsNullWhenOnlyClosedLegacyResultsExist()
     {
         var client = Substitute.For<IAmazonDynamoDB>();
         client.ScanAsync(Arg.Any<ScanRequest>(), Arg.Any<CancellationToken>()).Returns(
@@ -69,7 +68,10 @@ public class ParticipantEndpointTests
 
         var result = await queries.GetCurrentMatchAsync(default);
 
-        result!.Id.Should().Be("a-closed");
+        result.Should().BeNull();
+        await client.Received(2).ScanAsync(
+            Arg.Is<ScanRequest>(request => request.FilterExpression == "attribute_exists(Kickoff)"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -152,6 +154,25 @@ public class ParticipantEndpointTests
         factory.State.LastPredictionParticipantId.Should().Be("user-1");
     }
 
+    [Theory]
+    [InlineData("BRA")]
+    [InlineData(null)]
+    public async Task DynamoQueriesReadPenaltyWinnerAndLegacyRows(string? penaltyWinner)
+    {
+        var client = Substitute.For<IAmazonDynamoDB>();
+        var item = PredictionItem();
+        if (penaltyWinner is not null)
+        {
+            item["PenaltyWinnerTeamFifaCode"] = new(penaltyWinner);
+        }
+        client.GetItemAsync(Arg.Any<GetItemRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GetItemResponse { Item = item });
+
+        var prediction = await Queries(client).GetPredictionAsync("match-1", "user-1", default);
+
+        prediction!.Answers.PenaltyWinnerTeamFifaCode.Should().Be(penaltyWinner);
+    }
+
     [Fact]
     public async Task PutPredictionAtCutoffReturnsStableConflict()
     {
@@ -200,8 +221,7 @@ public class ParticipantEndpointTests
             MatchesTableName = "matches",
             ParticipantsTableName = "participants",
             PredictionsTableName = "predictions",
-            StandingsTableName = "standings",
-            ApiUsageTableName = "usage"
+            StandingsTableName = "standings"
         });
 
     private static Dictionary<string, AttributeValue> MatchItem(
@@ -223,6 +243,22 @@ public class ParticipantEndpointTests
         if (published) item["PublishedResultVersion"] = new() { N = "1" };
         return item;
     }
+
+    private static Dictionary<string, AttributeValue> PredictionItem() => new()
+    {
+        ["MatchId"] = new("match-1"),
+        ["ParticipantId"] = new("user-1"),
+        ["HomeGoals"] = new() { N = "1" },
+        ["AwayGoals"] = new() { N = "1" },
+        ["FirstScorerKey"] = new("BRA:10"),
+        ["HomeTopScorerKey"] = new("BRA:10"),
+        ["AwayTopScorerKey"] = new("ARG:9"),
+        ["HomeYellowCards"] = new() { N = "2" },
+        ["AwayYellowCards"] = new() { N = "3" },
+        ["HomeRedCards"] = new() { N = "0" },
+        ["AwayRedCards"] = new() { N = "1" },
+        ["SubmittedAt"] = new("2026-06-28T10:00:00Z")
+    };
 
     private record ApiError(string Code);
 
@@ -250,9 +286,7 @@ public class ParticipantEndpointTests
                 services.RemoveAll<IRosterCatalog>();
                 services.RemoveAll<IAdminApi>();
                 services.RemoveAll<IMatchManagementStore>();
-                services.RemoveAll<IWorldCupSyncService>();
-                services.RemoveAll<IWorldCupSyncLock>();
-                services.RemoveAll<IMatchScheduleService>();
+                services.RemoveAll<IResultConfirmationStore>();
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<IApiQueries>(State);
                 services.AddSingleton<IUserProfileService>(State);
@@ -261,11 +295,7 @@ public class ParticipantEndpointTests
                 services.AddSingleton<IRosterCatalog>(State);
                 services.AddSingleton<IAdminApi>(State);
                 services.AddSingleton<IMatchManagementStore>(State);
-                services.AddSingleton<IWorldCupSyncService>(State);
-                services.AddSingleton<IWorldCupSyncLock>(State);
-                services.AddSingleton<IMatchScheduleService>(State);
-                services.AddSingleton<MatchStatusService>();
-                services.AddSingleton<MatchStatusCoordinator>();
+                services.AddSingleton<IResultConfirmationStore>(State);
                 services.AddSingleton<TimeProvider>(State.Time);
             });
         }
@@ -273,8 +303,7 @@ public class ParticipantEndpointTests
 
     internal class TestState(DateTimeOffset now)
         : IApiQueries, IUserProfileService, IMatchRepository, IPredictionRepository, IRosterCatalog,
-            IAdminApi, IMatchManagementStore, IWorldCupSyncService, IWorldCupSyncLock,
-            IMatchScheduleService
+            IAdminApi, IMatchManagementStore, IResultConfirmationStore
     {
         private readonly Match match = new("match-1", ApiFactory.Kickoff, "BRA", "ARG");
         private readonly StoredPrediction prediction =
@@ -286,12 +315,18 @@ public class ParticipantEndpointTests
         public ManagedMatch? CreatedManualMatch { get; private set; }
         public int RecalculationCount { get; private set; }
         public bool DuplicateManualMatch { get; set; }
-        public Exception? SyncFailure { get; set; }
         public (string Id, AdminMatchRequest Request)? UpdatedMatch { get; private set; }
-        public List<string> EnsuredMatchIds { get; } = [];
+        public ManualResultDraft? SavedResult { get; private set; }
+        public MatchLifecycleResult FinishResult { get; set; } = new("active", null);
+        public Exception? FinishFailure { get; set; }
+        public Exception? SaveResultFailure { get; set; }
+        public Exception? AdminReadFailure { get; set; }
+        public Exception? ConfirmationFailure { get; set; }
+
+        public bool NoCurrentMatch { get; set; }
 
         public Task<Match?> GetCurrentMatchAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<Match?>(match);
+            Task.FromResult<Match?>(NoCurrentMatch ? null : match);
 
         public Task<Match?> GetMatchAsync(string matchId, CancellationToken cancellationToken) =>
             Task.FromResult<Match?>(matchId == match.Id ? match : null);
@@ -366,70 +401,27 @@ public class ParticipantEndpointTests
             RecalculationCount++;
             IReadOnlyList<ManagedMatch> result = CreatedManualMatch is null
                 ? [
-                    new ManagedMatch("later", 124, ApiFactory.Kickoff.AddDays(2), "GER", "ARG", "NS", MatchStatus.Archived),
-                    new ManagedMatch("active", 123, ApiFactory.Kickoff.AddDays(1), "BRA", "ARG", "NS", MatchStatus.Active)
+                    new ManagedMatch("later", ApiFactory.Kickoff.AddDays(2), "GER", "ARG", MatchStatus.Archived),
+                    new ManagedMatch("active", ApiFactory.Kickoff.AddDays(1), "BRA", "ARG", MatchStatus.Active)
                 ]
                 : [CreatedManualMatch];
             return Task.FromResult(result);
         }
 
-        public Task CreateManualAsync(ManagedMatch managedMatch, CancellationToken cancellationToken)
+        public Task<ManagedMatch> CreateManualAsync(ManagedMatch managedMatch, CancellationToken cancellationToken)
         {
             if (DuplicateManualMatch)
             {
                 throw new ConditionalCheckFailedException("duplicate");
             }
-            CreatedManualMatch = managedMatch;
-            return Task.CompletedTask;
+            CreatedManualMatch = managedMatch with { Status = MatchStatus.Upcoming };
+            return Task.FromResult(CreatedManualMatch);
         }
 
-        public Task<bool> UpsertProviderAsync(ManagedMatch managedMatch, CancellationToken cancellationToken) =>
-            Task.FromResult(true);
-
-        public Task UpdateStatusAsync(
-            string matchId, MatchStatus status, CancellationToken cancellationToken)
-        {
-            if (CreatedManualMatch?.Id == matchId)
-            {
-                CreatedManualMatch = CreatedManualMatch with { Status = status };
-            }
-            return Task.CompletedTask;
-        }
-
-        public Task<WorldCupSyncResult> SyncAsync(CancellationToken cancellationToken) =>
-            SyncFailure is null
-                ? Task.FromResult(new WorldCupSyncResult(true, Time.GetUtcNow(), 1, 0, 1, []))
-                : Task.FromException<WorldCupSyncResult>(SyncFailure);
-
-        public Task<WorldCupSyncClaim?> TryClaimAsync(
-            DateTimeOffset syncNow, CancellationToken cancellationToken) =>
-            Task.FromResult<WorldCupSyncClaim?>(new("claim", "owner"));
-
-        public Task CompleteAsync(
-            WorldCupSyncClaim claim, DateTimeOffset completedAt, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
-
-        public Task ReleaseAsync(WorldCupSyncClaim claim, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
-
-        public Task<WorldCupSyncLockStatus> GetStatusAsync(
-            DateTimeOffset syncNow, CancellationToken cancellationToken) =>
-            Task.FromResult(new WorldCupSyncLockStatus(ApiFactory.Kickoff, true));
-
-        public Task EnsureAsync(PollingMatch pollingMatch, CancellationToken cancellationToken) =>
-            RecordEnsureAsync(pollingMatch.MatchId);
-
-        private Task RecordEnsureAsync(string matchId)
-        {
-            EnsuredMatchIds.Add(matchId);
-            return Task.CompletedTask;
-        }
-
-        public Task DeleteAsync(string matchId, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
-
-        public Task CreateMatchAsync(AdminMatchRequest request, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public Task<MatchLifecycleResult> FinishAsync(string matchId, CancellationToken cancellationToken) =>
+            FinishFailure is null
+                ? Task.FromResult(FinishResult)
+                : Task.FromException<MatchLifecycleResult>(FinishFailure);
 
         public Task UpdateMatchAsync(
             string matchId,
@@ -440,23 +432,47 @@ public class ParticipantEndpointTests
             return Task.CompletedTask;
         }
 
-        public Task SyncMatchAsync(string matchId, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
-
-        public Task<object?> GetRawResultAsync(string matchId, CancellationToken cancellationToken) =>
-            Task.FromResult<object?>(new { status = "FT" });
+        public Task<ManualResultDraft?> GetResultAsync(string matchId, CancellationToken cancellationToken) =>
+            AdminReadFailure is null
+                ? Task.FromResult<ManualResultDraft?>(null)
+                : Task.FromException<ManualResultDraft?>(AdminReadFailure);
 
         public Task<LeaderboardResponse> GetProvisionalLeaderboardAsync(
             string matchId,
             CancellationToken cancellationToken) =>
-            Task.FromResult(new LeaderboardResponse(
-                [new LeaderboardEntry(1, "Bruno B.", 12, 1, 0)],
-                new RoundWinner("Bruno B.", 12)));
+            AdminReadFailure is null
+                ? Task.FromResult(new LeaderboardResponse(
+                    [new LeaderboardEntry(1, "Bruno B.", 12, 1, 0)],
+                    new RoundWinner("Bruno B.", 12)))
+                : Task.FromException<LeaderboardResponse>(AdminReadFailure);
+
+        public Task<ManualResultForConfirmation?> GetManualResultAsync(
+            string matchId,
+            CancellationToken cancellationToken) =>
+            ConfirmationFailure is not null
+                ? Task.FromException<ManualResultForConfirmation?>(ConfirmationFailure)
+                : Task.FromResult<ManualResultForConfirmation?>(null);
+
+        public Task<ConfirmationClaim> ClaimConfirmationAsync(
+            string matchId,
+            ConfirmedResult result,
+            string confirmedBySub,
+            DateTimeOffset confirmedAt,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("A missing draft must not be claimed.");
 
         public Task SaveResultAsync(
             string matchId,
-            ProvisionalResult result,
-            CancellationToken cancellationToken) => Task.CompletedTask;
+            ManualResultDraft result,
+            CancellationToken cancellationToken)
+        {
+            if (SaveResultFailure is not null)
+            {
+                return Task.FromException(SaveResultFailure);
+            }
+            SavedResult = result;
+            return Task.CompletedTask;
+        }
     }
 
     internal class MutableTimeProvider(DateTimeOffset now) : TimeProvider

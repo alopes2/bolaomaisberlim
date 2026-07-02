@@ -9,10 +9,12 @@ public record ConfirmedResult(
     int HomeYellowCards,
     int AwayYellowCards,
     int HomeRedCards,
-    int AwayRedCards);
+    int AwayRedCards,
+    string? PenaltyWinnerTeamFifaCode = null);
 
 public record ScoreBreakdown(
     int Result,
+    bool ExactScore,
     int FirstScorer,
     int HomeTopScorer,
     int AwayTopScorer,

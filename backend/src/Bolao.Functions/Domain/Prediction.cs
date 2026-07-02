@@ -9,4 +9,5 @@ public record PredictionAnswers(
     int HomeYellowCards,
     int AwayYellowCards,
     int HomeRedCards,
-    int AwayRedCards);
+    int AwayRedCards,
+    string? PenaltyWinnerTeamFifaCode = null);

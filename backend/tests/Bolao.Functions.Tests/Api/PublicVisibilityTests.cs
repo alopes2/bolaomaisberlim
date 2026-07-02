@@ -8,6 +8,18 @@ namespace Bolao.Functions.Tests.Api;
 public class PublicVisibilityTests
 {
     [Fact]
+    public async Task NoCurrentMatchReturnsOkWithJsonNull()
+    {
+        await using var factory = new ParticipantEndpointTests.ApiFactory();
+        factory.State.NoCurrentMatch = true;
+
+        var response = await factory.CreateClient().GetAsync("/matches/current");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Be("null");
+    }
+
+    [Fact]
     public async Task PredictionsAtCutoffExposePublicNameWithoutParticipantId()
     {
         await using var factory = new ParticipantEndpointTests.ApiFactory();

@@ -36,6 +36,15 @@ export function berlinLocalToIso(value: string) {
   return new Date(candidates[0]).toISOString()
 }
 
+export function isoToBerlinLocal(value: string) {
+  const parts = Object.fromEntries(
+    berlinFormatter.formatToParts(new Date(value))
+      .filter(part => part.type !== 'literal')
+      .map(part => [part.type, part.value]),
+  )
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+
 function isSameBerlinLocalTime(instant: number, expected: number[]) {
   const parts = Object.fromEntries(
     berlinFormatter.formatToParts(instant)

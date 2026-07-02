@@ -4,11 +4,6 @@ namespace Bolao.Functions.Persistence;
 
 public interface IResultRepository
 {
-    Task SaveProvisionalAsync(
-        string matchId,
-        ConfirmedResult result,
-        CancellationToken cancellationToken);
-
     Task PublishAsync(
         string matchId,
         string resultVersion,

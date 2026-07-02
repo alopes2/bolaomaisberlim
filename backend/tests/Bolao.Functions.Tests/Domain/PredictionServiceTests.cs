@@ -86,6 +86,52 @@ public class PredictionServiceTests
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
+    [Fact]
+    public async Task RejectsPenaltyWinnerForNonDrawPrediction()
+    {
+        var fixture = CreateFixture(Kickoff.AddHours(-1));
+        var answers = ValidAnswers() with { PenaltyWinnerTeamFifaCode = "BRA" };
+
+        var act = () => fixture.Service.SaveAsync(
+            "match-1", "user-1", answers, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task AcceptsPenaltyWinnerForDrawPrediction()
+    {
+        var fixture = CreateFixture(Kickoff.AddHours(-1));
+        var answers = ValidAnswers() with
+        {
+            AwayGoals = 2,
+            PenaltyWinnerTeamFifaCode = "BRA"
+        };
+
+        await fixture.Service.SaveAsync(
+            "match-1", "user-1", answers, CancellationToken.None);
+
+        fixture.Predictions.Get("match-1", "user-1").Answers.Should().Be(answers);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("FRA")]
+    public async Task RejectsPenaltyWinnerOutsideMatchTeams(string penaltyWinner)
+    {
+        var fixture = CreateFixture(Kickoff.AddHours(-1));
+        var answers = ValidAnswers() with
+        {
+            AwayGoals = 2,
+            PenaltyWinnerTeamFifaCode = penaltyWinner
+        };
+
+        var act = () => fixture.Service.SaveAsync(
+            "match-1", "user-1", answers, CancellationToken.None);
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
     private static Fixture CreateFixture(DateTimeOffset now)
     {
         var match = new Match("match-1", Kickoff, "BRA", "ARG");

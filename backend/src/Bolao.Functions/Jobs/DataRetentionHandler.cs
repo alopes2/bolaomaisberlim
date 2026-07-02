@@ -14,28 +14,6 @@ public record RetentionCandidate(
 
 public record RetentionRun(int AnonymizedCount, string OperationId);
 
-public interface IDataRetentionStore
-{
-    Task<IReadOnlyList<RetentionCandidate>> ListCandidatesAsync(
-        CancellationToken cancellationToken);
-
-    Task AnonymizeAsync(string participantId, CancellationToken cancellationToken);
-
-    Task DeleteAggregateResultsAsync(
-        string participantId,
-        CancellationToken cancellationToken);
-}
-
-public interface IAccountDeletionService
-{
-    Task DeleteAsync(string cognitoUsername, CancellationToken cancellationToken);
-}
-
-public interface IRetentionLogger
-{
-    void Log(RetentionRun run);
-}
-
 public class ConsoleRetentionLogger : IRetentionLogger
 {
     public void Log(RetentionRun run) => Console.WriteLine(
@@ -193,12 +171,12 @@ public class CognitoAccountDeletionService(
         }, cancellationToken);
 }
 
-internal record RetentionDependencies(
+public record RetentionDependencies(
     IDataRetentionStore Store,
     IAccountDeletionService Accounts,
     IRetentionLogger Logger);
 
-internal static class RetentionComposition
+public static class RetentionComposition
 {
     public static RetentionDependencies Create()
     {
@@ -207,8 +185,7 @@ internal static class RetentionComposition
             ParticipantsTableName = Required("PARTICIPANTS_TABLE_NAME"),
             MatchesTableName = Required("MATCHES_TABLE_NAME"),
             PredictionsTableName = Required("PREDICTIONS_TABLE_NAME"),
-            StandingsTableName = Required("STANDINGS_TABLE_NAME"),
-            ApiUsageTableName = Required("API_USAGE_TABLE_NAME")
+            StandingsTableName = Required("STANDINGS_TABLE_NAME")
         };
         return new RetentionDependencies(
             new DynamoDataRetentionStore(new AmazonDynamoDBClient(), options),

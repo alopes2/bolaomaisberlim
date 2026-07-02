@@ -56,35 +56,27 @@ describe('App', () => {
     const api = {
       getAdminMatches: vi.fn().mockResolvedValue({
         matches: [],
-        lastSuccessfulSyncAt: null,
-        providerCallAvailable: true,
       }),
     } as unknown as ApiClient
 
     renderAuthenticatedApp(vi.fn(), api)
 
-    expect(await screen.findByText('Sincronizar Copa do Mundo')).toBeVisible()
+    expect(await screen.findByText('Adicionar jogo manualmente')).toBeVisible()
   })
 
   it('keeps the result page for an admin match ID', async () => {
     window.history.replaceState({}, '', '/admin?matchId=wc2026-123')
     const api = {
+      getAdminMatches: vi.fn().mockResolvedValue({
+        matches: [{
+          id: 'wc2026-123', kickoff: '2026-06-29T17:00:00Z',
+          homeTeamFifaCode: 'BRA', awayTeamFifaCode: 'GER',
+          status: 'Active', resultConfirmed: false,
+        }],
+      }),
       getAdminResult: vi.fn().mockResolvedValue({
-        providerStatus: 'FT',
-        result: {
-          homeGoals: 2,
-          awayGoals: 1,
-          firstScorerKey: null,
-          homeTopScorerKeys: [],
-          awayTopScorerKeys: [],
-          homeYellowCards: 0,
-          awayYellowCards: 0,
-          homeRedCards: 0,
-          awayRedCards: 0,
-        },
-        unresolvedPlayers: [],
-        homeGoalEvents: 2,
-        awayGoalEvents: 1,
+        goals: [], homeYellowCards: 0, awayYellowCards: 0,
+        homeRedCards: 0, awayRedCards: 0, penaltyWinnerTeamFifaCode: null,
       }),
       getProvisionalLeaderboard: vi.fn().mockResolvedValue({ entries: [], roundWinner: null }),
       saveAdminResult: vi.fn(),

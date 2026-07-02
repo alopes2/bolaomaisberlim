@@ -1,35 +1,11 @@
 using Bolao.Functions.Domain;
-using Bolao.Functions.Jobs;
 using Bolao.Functions.Notifications;
 
 namespace Bolao.Functions.Admin;
 
 public record ConfirmationClaim(int ResultVersion, ConfirmedResult Result);
 
-public interface IResultConfirmationStore
-{
-    Task<ProvisionalResult?> GetProvisionalAsync(
-        string matchId,
-        CancellationToken cancellationToken);
-
-    Task<ConfirmationClaim> ClaimConfirmationAsync(
-        string matchId,
-        ConfirmedResult result,
-        string confirmedBySub,
-        DateTimeOffset confirmedAt,
-        CancellationToken cancellationToken);
-}
-
-public interface IConfirmedResultPublisher
-{
-    Task PublishAsync(
-        string matchId,
-        string resultVersion,
-        ConfirmedResult result,
-        CancellationToken cancellationToken);
-}
-
-public sealed class ConfirmedResultPublisher(ResultPublicationService publication)
+public class ConfirmedResultPublisher(ResultPublicationService publication)
     : IConfirmedResultPublisher
 {
     public Task PublishAsync(
@@ -42,6 +18,7 @@ public sealed class ConfirmedResultPublisher(ResultPublicationService publicatio
 
 public class ResultConfirmationService(
     IResultConfirmationStore store,
+    ManualResultRosterValidator rosterValidator,
     IConfirmedResultPublisher publisher,
     IWinnerNotificationService notifications,
     TimeProvider timeProvider)
@@ -51,13 +28,16 @@ public class ResultConfirmationService(
         string confirmedBySub,
         CancellationToken cancellationToken)
     {
-        var provisional = await store.GetProvisionalAsync(matchId, cancellationToken)
-            ?? throw new KeyNotFoundException($"No provisional result exists for match '{matchId}'.");
+        var manualResult = await store.GetManualResultAsync(matchId, cancellationToken)
+            ?? throw new ResultValidationException($"No manual result exists for match '{matchId}'.");
+        var result = manualResult.Draft.ToConfirmedResult(
+            manualResult.HomeTeamFifaCode,
+            manualResult.AwayTeamFifaCode);
+        await rosterValidator.ValidateAsync(manualResult.Draft, cancellationToken);
 
-        Validate(provisional);
         var claim = await store.ClaimConfirmationAsync(
             matchId,
-            provisional.Result,
+            result,
             confirmedBySub,
             timeProvider.GetUtcNow(),
             cancellationToken);
@@ -70,21 +50,6 @@ public class ResultConfirmationService(
         return claim;
     }
 
-    private static void Validate(ProvisionalResult provisional)
-    {
-        if (provisional.UnresolvedPlayers.Count > 0)
-        {
-            throw new ResultValidationException("The result has unresolved player mappings.");
-        }
-
-        if (provisional.HomeGoalEvents is not null
-            && provisional.HomeGoalEvents != provisional.Result.HomeGoals
-            || provisional.AwayGoalEvents is not null
-            && provisional.AwayGoalEvents != provisional.Result.AwayGoals)
-        {
-            throw new ResultValidationException("The score does not match the goal events.");
-        }
-    }
 }
 
 public class ResultValidationException(string message) : InvalidOperationException(message);

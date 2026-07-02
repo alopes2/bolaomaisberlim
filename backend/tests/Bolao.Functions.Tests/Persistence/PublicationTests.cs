@@ -57,6 +57,32 @@ public class PublicationTests
         await act.Should().ThrowAsync<ResultAlreadyPublishedException>();
     }
 
+    [Fact]
+    public async Task PenaltyDeductionStillIncrementsExactScoreCount()
+    {
+        var repositories = new InMemoryRepositories();
+        var prediction = Prediction() with
+        {
+            HomeGoals = 1,
+            AwayGoals = 1,
+            PenaltyWinnerTeamFifaCode = "ARG"
+        };
+        var result = Result() with
+        {
+            HomeGoals = 1,
+            AwayGoals = 1,
+            PenaltyWinnerTeamFifaCode = "BRA"
+        };
+        await repositories.UpsertAsync(
+            "match-1", "user-1", prediction, DateTimeOffset.Parse("2026-06-28T10:00:00Z"), default);
+
+        await new ResultPublicationService(repositories, repositories)
+            .PublishAsync("match-1", "result-v1", result, default);
+
+        var standing = await repositories.GetStandingAsync("user-1", default);
+        standing!.ExactScoreCount.Should().Be(1);
+    }
+
     private static PredictionAnswers Prediction()
     {
         return new PredictionAnswers(2, 1, "BRA:10", "BRA:10", "ARG:9", 2, 3, 0, 1);
