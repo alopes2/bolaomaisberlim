@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
+using Bolao.Functions.Admin;
 using Bolao.Functions.Domain;
 using Bolao.Functions.FootballApi;
 using Bolao.Functions.Persistence;
@@ -51,7 +52,8 @@ public class MatchPollingHandler(
     IRosterCatalog rosters,
     IProvisionalResultStore results,
     IMatchScheduleService schedules,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    MatchStatusCoordinator statusCoordinator)
 {
     public MatchPollingHandler() : this(JobComposition.CreatePollingDependencies())
     {
@@ -63,7 +65,8 @@ public class MatchPollingHandler(
         dependencies.Rosters,
         dependencies.Results,
         dependencies.Schedules,
-        TimeProvider.System)
+        TimeProvider.System,
+        dependencies.StatusCoordinator)
     {
     }
 
@@ -77,7 +80,7 @@ public class MatchPollingHandler(
         var match = await matches.GetAsync(input.MatchId, cancellationToken);
         if (timeProvider.GetUtcNow() >= match.Kickoff.AddHours(4))
         {
-            await schedules.DeleteAsync(match.MatchId, cancellationToken);
+            await statusCoordinator.RecalculateAsync(cancellationToken);
             return;
         }
 
@@ -109,7 +112,7 @@ public class MatchPollingHandler(
 
         var provisional = await MapResultAsync(match, fixture, cancellationToken);
         await results.SaveAsync(match.MatchId, provisional, cancellationToken);
-        await schedules.DeleteAsync(match.MatchId, cancellationToken);
+        await statusCoordinator.RecalculateAsync(cancellationToken);
     }
 
     private async Task<ProvisionalResult> MapResultAsync(

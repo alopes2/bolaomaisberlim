@@ -112,6 +112,8 @@ Use somente os escopos `openid`, `email` e `profile`. Login local, senha e códi
 
 A área de apuração usa `/admin?matchId=MATCH_ID`. O cadastro/ajuste de jogo também está disponível pela API administrativa e recebe `id`, `providerFixtureId`, `kickoff`, códigos FIFA e, após a entrega, `prizeHandedOverAt`.
 
+Consulte [`docs/world-cup-2026-fixtures.md`](docs/world-cup-2026-fixtures.md) para sincronizar e gerenciar os jogos da Copa do Mundo, usar o cadastro manual e entender o polling automático.
+
 O admin revisa o resultado bruto, resolve jogadores, corrige valores, consulta o ranking provisório e confirma. A confirmação grava `ConfirmedBySub`, `ConfirmedAt`, snapshot e `ResultVersion`; repetir a mesma versão não duplica pontos.
 
 ## Operação

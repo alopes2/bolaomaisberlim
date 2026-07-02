@@ -1,3 +1,5 @@
+using Bolao.Functions.Admin;
+using Bolao.Functions.Domain;
 using Bolao.Functions.Jobs;
 using FluentAssertions;
 
@@ -6,13 +8,14 @@ namespace Bolao.Functions.Tests.Jobs;
 public class DailyMatchSyncHandlerTests
 {
     [Fact]
-    public async Task EnsuresSchedulesOnlyForMatchesWhosePollingWindowHasNotEnded()
+    public async Task EnsuresScheduleOnlyForPersistedActiveMatch()
     {
         var now = DateTimeOffset.Parse("2026-06-29T12:00:00Z");
         var matches = new StubStore([
-            Match("upcoming", now.AddHours(3)),
-            Match("live", now.AddHours(-2)),
-            Match("expired", now.AddHours(-4))
+            Match("active", now.AddHours(3), MatchStatus.Active),
+            Match("upcoming", now.AddDays(4), MatchStatus.Upcoming),
+            Match("archived", now.AddHours(2), MatchStatus.Archived),
+            Match("closed", now.AddHours(-2), MatchStatus.Closed)
         ]);
         var schedules = new StubSchedules();
         var handler = new DailyMatchSyncHandler(
@@ -21,20 +24,22 @@ public class DailyMatchSyncHandlerTests
         await handler.ProcessAsync(new DailyMatchSyncEvent("daily"), default);
 
         schedules.Ensured.Select(match => match.MatchId)
-            .Should().BeEquivalentTo(["upcoming", "live"]);
+            .Should().ContainSingle("active");
     }
 
-    private static PollingMatch Match(string id, DateTimeOffset kickoff) =>
-        new(id, 123, kickoff, "BRA", "ARG");
+    private static ManagedMatch Match(string id, DateTimeOffset kickoff, MatchStatus status) =>
+        new(id, 123, kickoff, "BRA", "ARG", "NS", status);
 
-    private sealed class StubStore(IReadOnlyList<PollingMatch> matches) : IMatchPollingStore
+    private sealed class StubStore(IReadOnlyList<ManagedMatch> matches) : IMatchManagementStore
     {
-        public Task<PollingMatch> GetAsync(string matchId, CancellationToken cancellationToken) =>
-            Task.FromResult(matches.Single(match => match.MatchId == matchId));
-        public Task<IReadOnlyList<PollingMatch>> ListAsync(CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<ManagedMatch>> ListAsync(CancellationToken cancellationToken) =>
             Task.FromResult(matches);
-        public Task SaveStatusAsync(string matchId, string status, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public Task CreateManualAsync(ManagedMatch match, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+        public Task<bool> UpsertProviderAsync(ManagedMatch match, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+        public Task UpdateStatusAsync(string matchId, MatchStatus status, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubSchedules : IMatchScheduleService

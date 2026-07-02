@@ -2,7 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using Amazon.DynamoDBv2;
+using Amazon.DynamoDBv2.Model;
 using Bolao.Functions.Api;
+using Bolao.Functions.Admin;
 using Bolao.Functions.Domain;
 using Bolao.Functions.Persistence;
 using Bolao.Functions.Rosters;
@@ -16,11 +19,71 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Bolao.Functions.Tests.Api;
 
 public class ParticipantEndpointTests
 {
+    [Fact]
+    public async Task CurrentMatchPrefersLatestClosedUnpublishedProvisionalResult()
+    {
+        var queries = QueriesWithMatches(
+            MatchItem("active", ApiFactory.Kickoff.AddDays(2), MatchStatus.Active),
+            MatchItem("closed-old", ApiFactory.Kickoff.AddDays(-2), MatchStatus.Closed, provisional: true),
+            MatchItem("closed-latest", ApiFactory.Kickoff.AddDays(-1), MatchStatus.Closed, provisional: true));
+
+        var result = await queries.GetCurrentMatchAsync(default);
+
+        result!.Id.Should().Be("closed-latest");
+    }
+
+    [Fact]
+    public async Task CurrentMatchIgnoresPublishedOrResultlessClosedMatches()
+    {
+        var queries = QueriesWithMatches(
+            MatchItem("active", ApiFactory.Kickoff.AddDays(2), MatchStatus.Active),
+            MatchItem("imported-closed", ApiFactory.Kickoff.AddDays(-1), MatchStatus.Closed),
+            MatchItem("published", ApiFactory.Kickoff, MatchStatus.Closed, provisional: true, published: true));
+
+        var result = await queries.GetCurrentMatchAsync(default);
+
+        result!.Id.Should().Be("active");
+    }
+
+    [Fact]
+    public async Task CurrentMatchUsesOrdinalIdTieBreakAcrossScanPages()
+    {
+        var client = Substitute.For<IAmazonDynamoDB>();
+        client.ScanAsync(Arg.Any<ScanRequest>(), Arg.Any<CancellationToken>()).Returns(
+            new ScanResponse
+            {
+                Items = [MatchItem("z-closed", ApiFactory.Kickoff, MatchStatus.Closed, provisional: true)],
+                LastEvaluatedKey = new Dictionary<string, AttributeValue> { ["MatchId"] = new("z-closed") }
+            },
+            new ScanResponse
+            {
+                Items = [MatchItem("a-closed", ApiFactory.Kickoff, MatchStatus.Closed, provisional: true)]
+            });
+        var queries = Queries(client);
+
+        var result = await queries.GetCurrentMatchAsync(default);
+
+        result!.Id.Should().Be("a-closed");
+    }
+
+    [Fact]
+    public async Task ActiveCurrentMatchUsesOrdinalIdTieBreakForEqualKickoffs()
+    {
+        var queries = QueriesWithMatches(
+            MatchItem("z-active", ApiFactory.Kickoff, MatchStatus.Active),
+            MatchItem("a-active", ApiFactory.Kickoff, MatchStatus.Active));
+
+        var result = await queries.GetCurrentMatchAsync(default);
+
+        result!.Id.Should().Be("a-active");
+    }
+
     [Theory]
     [InlineData("/matches/current")]
     [InlineData("/matches/history")]
@@ -122,6 +185,45 @@ public class ParticipantEndpointTests
         return client;
     }
 
+    private static DynamoApiQueries QueriesWithMatches(
+        params Dictionary<string, AttributeValue>[] matches)
+    {
+        var client = Substitute.For<IAmazonDynamoDB>();
+        client.ScanAsync(Arg.Any<ScanRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new ScanResponse { Items = [.. matches] });
+        return Queries(client);
+    }
+
+    private static DynamoApiQueries Queries(IAmazonDynamoDB client) =>
+        new(client, new DynamoDbOptions
+        {
+            MatchesTableName = "matches",
+            ParticipantsTableName = "participants",
+            PredictionsTableName = "predictions",
+            StandingsTableName = "standings",
+            ApiUsageTableName = "usage"
+        });
+
+    private static Dictionary<string, AttributeValue> MatchItem(
+        string id,
+        DateTimeOffset kickoff,
+        MatchStatus status,
+        bool provisional = false,
+        bool published = false)
+    {
+        var item = new Dictionary<string, AttributeValue>
+        {
+            ["MatchId"] = new(id),
+            ["Kickoff"] = new(kickoff.ToString("O")),
+            ["HomeTeamFifaCode"] = new("BRA"),
+            ["AwayTeamFifaCode"] = new("ARG"),
+            ["Status"] = new(status.ToString())
+        };
+        if (provisional) item["ProvisionalResult"] = new("{}");
+        if (published) item["PublishedResultVersion"] = new() { N = "1" };
+        return item;
+    }
+
     private record ApiError(string Code);
 
     internal class ApiFactory : WebApplicationFactory<Program>
@@ -147,6 +249,10 @@ public class ParticipantEndpointTests
                 services.RemoveAll<IPredictionRepository>();
                 services.RemoveAll<IRosterCatalog>();
                 services.RemoveAll<IAdminApi>();
+                services.RemoveAll<IMatchManagementStore>();
+                services.RemoveAll<IWorldCupSyncService>();
+                services.RemoveAll<IWorldCupSyncLock>();
+                services.RemoveAll<IMatchScheduleService>();
                 services.RemoveAll<TimeProvider>();
                 services.AddSingleton<IApiQueries>(State);
                 services.AddSingleton<IUserProfileService>(State);
@@ -154,6 +260,12 @@ public class ParticipantEndpointTests
                 services.AddSingleton<IPredictionRepository>(State);
                 services.AddSingleton<IRosterCatalog>(State);
                 services.AddSingleton<IAdminApi>(State);
+                services.AddSingleton<IMatchManagementStore>(State);
+                services.AddSingleton<IWorldCupSyncService>(State);
+                services.AddSingleton<IWorldCupSyncLock>(State);
+                services.AddSingleton<IMatchScheduleService>(State);
+                services.AddSingleton<MatchStatusService>();
+                services.AddSingleton<MatchStatusCoordinator>();
                 services.AddSingleton<TimeProvider>(State.Time);
             });
         }
@@ -161,7 +273,8 @@ public class ParticipantEndpointTests
 
     internal class TestState(DateTimeOffset now)
         : IApiQueries, IUserProfileService, IMatchRepository, IPredictionRepository, IRosterCatalog,
-            IAdminApi
+            IAdminApi, IMatchManagementStore, IWorldCupSyncService, IWorldCupSyncLock,
+            IMatchScheduleService
     {
         private readonly Match match = new("match-1", ApiFactory.Kickoff, "BRA", "ARG");
         private readonly StoredPrediction prediction =
@@ -170,6 +283,12 @@ public class ParticipantEndpointTests
         public MutableTimeProvider Time { get; } = new(now);
         public string? LastPredictionParticipantId { get; private set; }
         public string? LastProfileParticipantId { get; private set; }
+        public ManagedMatch? CreatedManualMatch { get; private set; }
+        public int RecalculationCount { get; private set; }
+        public bool DuplicateManualMatch { get; set; }
+        public Exception? SyncFailure { get; set; }
+        public (string Id, AdminMatchRequest Request)? UpdatedMatch { get; private set; }
+        public List<string> EnsuredMatchIds { get; } = [];
 
         public Task<Match?> GetCurrentMatchAsync(CancellationToken cancellationToken) =>
             Task.FromResult<Match?>(match);
@@ -239,13 +358,87 @@ public class ParticipantEndpointTests
                 keys.Select(key => new Player(key, 10, "", key)).ToArray()));
         }
 
+        public Task<bool> ContainsTeamAsync(string fifaCode, CancellationToken cancellationToken) =>
+            Task.FromResult(fifaCode is "BRA" or "ARG");
+
+        public Task<IReadOnlyList<ManagedMatch>> ListAsync(CancellationToken cancellationToken)
+        {
+            RecalculationCount++;
+            IReadOnlyList<ManagedMatch> result = CreatedManualMatch is null
+                ? [
+                    new ManagedMatch("later", 124, ApiFactory.Kickoff.AddDays(2), "GER", "ARG", "NS", MatchStatus.Archived),
+                    new ManagedMatch("active", 123, ApiFactory.Kickoff.AddDays(1), "BRA", "ARG", "NS", MatchStatus.Active)
+                ]
+                : [CreatedManualMatch];
+            return Task.FromResult(result);
+        }
+
+        public Task CreateManualAsync(ManagedMatch managedMatch, CancellationToken cancellationToken)
+        {
+            if (DuplicateManualMatch)
+            {
+                throw new ConditionalCheckFailedException("duplicate");
+            }
+            CreatedManualMatch = managedMatch;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> UpsertProviderAsync(ManagedMatch managedMatch, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+
+        public Task UpdateStatusAsync(
+            string matchId, MatchStatus status, CancellationToken cancellationToken)
+        {
+            if (CreatedManualMatch?.Id == matchId)
+            {
+                CreatedManualMatch = CreatedManualMatch with { Status = status };
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task<WorldCupSyncResult> SyncAsync(CancellationToken cancellationToken) =>
+            SyncFailure is null
+                ? Task.FromResult(new WorldCupSyncResult(true, Time.GetUtcNow(), 1, 0, 1, []))
+                : Task.FromException<WorldCupSyncResult>(SyncFailure);
+
+        public Task<WorldCupSyncClaim?> TryClaimAsync(
+            DateTimeOffset syncNow, CancellationToken cancellationToken) =>
+            Task.FromResult<WorldCupSyncClaim?>(new("claim", "owner"));
+
+        public Task CompleteAsync(
+            WorldCupSyncClaim claim, DateTimeOffset completedAt, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task ReleaseAsync(WorldCupSyncClaim claim, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<WorldCupSyncLockStatus> GetStatusAsync(
+            DateTimeOffset syncNow, CancellationToken cancellationToken) =>
+            Task.FromResult(new WorldCupSyncLockStatus(ApiFactory.Kickoff, true));
+
+        public Task EnsureAsync(PollingMatch pollingMatch, CancellationToken cancellationToken) =>
+            RecordEnsureAsync(pollingMatch.MatchId);
+
+        private Task RecordEnsureAsync(string matchId)
+        {
+            EnsuredMatchIds.Add(matchId);
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteAsync(string matchId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
         public Task CreateMatchAsync(AdminMatchRequest request, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
         public Task UpdateMatchAsync(
             string matchId,
             AdminMatchRequest request,
-            CancellationToken cancellationToken) => Task.CompletedTask;
+            CancellationToken cancellationToken)
+        {
+            UpdatedMatch = (matchId, request);
+            return Task.CompletedTask;
+        }
 
         public Task SyncMatchAsync(string matchId, CancellationToken cancellationToken) =>
             Task.CompletedTask;

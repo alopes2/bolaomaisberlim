@@ -78,16 +78,29 @@ public class DynamoUserProfileService(
 
 public class DynamoApiQueries(
     IAmazonDynamoDB client,
-    DynamoDbOptions options,
-    TimeProvider timeProvider) : IApiQueries
+    DynamoDbOptions options) : IApiQueries
 {
     public async Task<Match?> GetCurrentMatchAsync(CancellationToken cancellationToken)
     {
-        var matches = await ScanMatchesAsync(cancellationToken);
-        var now = timeProvider.GetUtcNow();
-        return matches
-            .Where(match => match.Kickoff.AddHours(4) > now)
-            .OrderBy(match => match.Kickoff)
+        var items = await ScanMatchItemsAsync(cancellationToken);
+        var resultPendingConfirmation = items
+            .Where(item => MatchStatusValue(item) == MatchStatus.Closed
+                && item.ContainsKey("ProvisionalResult")
+                && !item.ContainsKey("PublishedResultVersion"))
+            .OrderByDescending(item => DateTimeOffset.Parse(
+                item["Kickoff"].S, CultureInfo.InvariantCulture))
+            .ThenBy(item => item["MatchId"].S, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (resultPendingConfirmation is not null)
+        {
+            return ToMatch(resultPendingConfirmation);
+        }
+
+        return items
+            .Where(item => MatchStatusValue(item) == MatchStatus.Active)
+            .OrderBy(item => DateTimeOffset.Parse(item["Kickoff"].S, CultureInfo.InvariantCulture))
+            .ThenBy(item => item["MatchId"].S, StringComparer.Ordinal)
+            .Select(ToMatch)
             .FirstOrDefault();
     }
 
@@ -271,7 +284,15 @@ public class DynamoApiQueries(
         item["MatchId"].S,
         DateTimeOffset.Parse(item["Kickoff"].S, CultureInfo.InvariantCulture),
         item["HomeTeamFifaCode"].S,
-        item["AwayTeamFifaCode"].S);
+        item["AwayTeamFifaCode"].S,
+        MatchStatusValue(item));
+
+    private static MatchStatus? MatchStatusValue(
+        IReadOnlyDictionary<string, AttributeValue> item) =>
+        item.TryGetValue("Status", out var value)
+        && Enum.TryParse<MatchStatus>(value.S, out var status)
+            ? status
+            : null;
 
     private static StoredPrediction ToPrediction(IReadOnlyDictionary<string, AttributeValue> item) => new(
         item["MatchId"].S,

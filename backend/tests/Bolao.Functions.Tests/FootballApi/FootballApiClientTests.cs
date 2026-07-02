@@ -51,6 +51,42 @@ public class FootballApiClientTests
         handler.LastRequest.Headers.GetValues("x-apisports-key").Should().ContainSingle("test-key");
     }
 
+    [Fact]
+    public async Task GetsAndMapsWorldCupFixtures()
+    {
+        var handler = new RecordedResponseHandler(WorldCupFixturesJson());
+        var repository = new InMemoryQuotaRepository();
+        var client = new FootballApiClient(
+            new HttpClient(handler),
+            new ApiQuotaGuard(repository, limit: 80, reserve: 20),
+            "test-key");
+
+        var fixtures = await client.GetWorldCupFixturesAsync(2026, default);
+
+        handler.LastRequest!.RequestUri.Should().Be(
+            "https://v3.football.api-sports.io/fixtures?league=1&season=2026&timezone=Europe%2FBerlin");
+        fixtures.Should().ContainSingle().Which.Should().Be(new FootballFixtureSummary(
+            456,
+            DateTimeOffset.Parse("2026-07-01T21:00:00+02:00"),
+            "NS",
+            "BRA",
+            "ARG"));
+        repository.Reservations.Should().Be(1);
+        repository.RecordedQuota.Should().Be((100, 99));
+    }
+
+    [Theory]
+    [InlineData("{ \"errors\": { \"requests\": \"Invalid request\" }, \"response\": [] }")]
+    [InlineData("{ \"errors\": [], \"response\": [] }")]
+    public async Task RejectsProviderErrorsAndEmptyWorldCupResponses(string json)
+    {
+        var client = CreateClient(new RecordedResponseHandler(json));
+
+        var act = () => client.GetWorldCupFixturesAsync(2026, default);
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+    }
+
     private static FootballApiClient CreateClient(HttpMessageHandler handler)
     {
         var repository = new InMemoryQuotaRepository();
@@ -80,6 +116,50 @@ public class FootballApiClientTests
           }]
         }
         """;
+
+    private static string WorldCupFixturesJson() => """
+        {
+          "response": [{
+            "fixture": {
+              "id": 456,
+              "date": "2026-07-01T21:00:00+02:00",
+              "status": { "short": "NS" }
+            },
+            "teams": {
+              "home": { "id": 10, "name": "Brazil", "code": "BRA" },
+              "away": { "id": 20, "name": "Argentina", "code": "ARG" }
+            }
+          }]
+        }
+        """;
+
+    private sealed class InMemoryQuotaRepository : IApiQuotaRepository
+    {
+        public int Reservations { get; private set; }
+        public (int Limit, int Remaining)? RecordedQuota { get; private set; }
+
+        public Task<bool> TryReserveAsync(
+            string provider,
+            int limit,
+            int reserve,
+            DateTimeOffset now,
+            DateTimeOffset probeBefore,
+            CancellationToken cancellationToken)
+        {
+            Reservations++;
+            return Task.FromResult(true);
+        }
+
+        public Task RecordProviderQuotaAsync(
+            string provider,
+            int limit,
+            int remaining,
+            CancellationToken cancellationToken)
+        {
+            RecordedQuota = (limit, remaining);
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class RecordedResponseHandler(string json) : HttpMessageHandler
     {

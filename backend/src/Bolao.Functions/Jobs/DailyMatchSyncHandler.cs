@@ -1,5 +1,7 @@
 using Amazon.DynamoDBv2;
 using Amazon.Scheduler;
+using Bolao.Functions.Admin;
+using Bolao.Functions.Domain;
 using Bolao.Functions.FootballApi;
 using Bolao.Functions.Persistence;
 using Bolao.Functions.Rosters;
@@ -9,7 +11,7 @@ namespace Bolao.Functions.Jobs;
 public record DailyMatchSyncEvent(string Source);
 
 public class DailyMatchSyncHandler(
-    IMatchPollingStore matches,
+    IMatchManagementStore matches,
     IMatchScheduleService schedules,
     TimeProvider timeProvider)
 {
@@ -33,11 +35,19 @@ public class DailyMatchSyncHandler(
     {
         var now = timeProvider.GetUtcNow();
         var scheduledMatches = await matches.ListAsync(cancellationToken);
-        foreach (var match in scheduledMatches.Where(match => match.Kickoff.AddHours(4) > now))
+        foreach (var match in scheduledMatches.Where(match =>
+            match.Status == MatchStatus.Active && match.Kickoff.AddHours(4) > now))
         {
-            await schedules.EnsureAsync(match, cancellationToken);
+            await schedules.EnsureAsync(ToPollingMatch(match), cancellationToken);
         }
     }
+
+    private static PollingMatch ToPollingMatch(ManagedMatch match) => new(
+        match.Id,
+        match.ProviderFixtureId,
+        match.Kickoff,
+        match.HomeTeamFifaCode,
+        match.AwayTeamFifaCode);
 }
 
 internal record PollingDependencies(
@@ -45,10 +55,11 @@ internal record PollingDependencies(
     IFootballApiClient Football,
     IRosterCatalog Rosters,
     IProvisionalResultStore Results,
-    IMatchScheduleService Schedules);
+    IMatchScheduleService Schedules,
+    MatchStatusCoordinator StatusCoordinator);
 
 internal record DailyDependencies(
-    IMatchPollingStore Matches,
+    IMatchManagementStore Matches,
     IMatchScheduleService Schedules);
 
 internal static class JobComposition
@@ -56,21 +67,30 @@ internal static class JobComposition
     public static PollingDependencies CreatePollingDependencies()
     {
         var options = DynamoOptions();
+        var dynamo = new AmazonDynamoDBClient();
+        var schedules = ScheduleService();
+        var management = new DynamoMatchManagementStore(dynamo, options);
         var quota = new ApiQuotaGuard(
-            new DynamoApiQuotaRepository(new AmazonDynamoDBClient(), options));
+            new DynamoApiQuotaRepository(dynamo, options));
         return new PollingDependencies(
-            new DynamoMatchPollingStore(new AmazonDynamoDBClient(), options),
+            new DynamoMatchPollingStore(dynamo, options),
             new FootballApiClient(new HttpClient(), quota),
             new JsonRosterCatalog(Path.Combine(AppContext.BaseDirectory, "assets", "teams.json")),
-            new DynamoProvisionalResultStore(new AmazonDynamoDBClient(), options),
-            ScheduleService());
+            new DynamoProvisionalResultStore(dynamo, options),
+            schedules,
+            new MatchStatusCoordinator(
+                management,
+                new MatchStatusService(),
+                schedules,
+                TimeProvider.System,
+                new DynamoMatchStatusLock(dynamo, options)));
     }
 
     public static DailyDependencies CreateDailyDependencies()
     {
         var options = DynamoOptions();
         return new DailyDependencies(
-            new DynamoMatchPollingStore(new AmazonDynamoDBClient(), options),
+            new DynamoMatchManagementStore(new AmazonDynamoDBClient(), options),
             ScheduleService());
     }
 

@@ -1,5 +1,6 @@
 using Bolao.Functions.Domain;
 using Bolao.Functions.Persistence;
+using Bolao.Functions.Admin;
 
 namespace Bolao.Functions.Api;
 
@@ -50,6 +51,20 @@ public record AdminMatchRequest(
     string HomeTeamFifaCode,
     string AwayTeamFifaCode,
     DateTimeOffset? PrizeHandedOverAt = null);
+
+public record AdminMatchResponse(
+    string Id,
+    long ProviderFixtureId,
+    DateTimeOffset Kickoff,
+    string HomeTeamFifaCode,
+    string AwayTeamFifaCode,
+    string ProviderStatus,
+    string? Status);
+
+public record AdminMatchesResponse(
+    IReadOnlyList<AdminMatchResponse> Matches,
+    DateTimeOffset? LastSuccessfulSyncAt,
+    bool ProviderCallAvailable);
 
 public interface IAdminApi
 {

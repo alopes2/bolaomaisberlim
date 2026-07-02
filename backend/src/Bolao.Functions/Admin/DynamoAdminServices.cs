@@ -41,35 +41,33 @@ public class DynamoAdminApi(
         AdminMatchRequest request,
         CancellationToken cancellationToken)
     {
+        var updateExpression = "SET ProviderFixtureId = :fixture, Kickoff = :kickoff, "
+            + "HomeTeamFifaCode = :home, AwayTeamFifaCode = :away";
+        var values = new Dictionary<string, AttributeValue>
+        {
+            [":fixture"] = new()
+            {
+                N = request.ProviderFixtureId.ToString(CultureInfo.InvariantCulture)
+            },
+            [":kickoff"] = new(request.Kickoff.ToString("O", CultureInfo.InvariantCulture)),
+            [":home"] = new(request.HomeTeamFifaCode),
+            [":away"] = new(request.AwayTeamFifaCode)
+        };
+        if (request.PrizeHandedOverAt is not null)
+        {
+            updateExpression += ", PrizeHandedOverAt = :handedOverAt";
+            values[":handedOverAt"] = new(
+                request.PrizeHandedOverAt.Value.ToString("O", CultureInfo.InvariantCulture));
+        }
+
         await client.UpdateItemAsync(new UpdateItemRequest
         {
             TableName = options.MatchesTableName,
             Key = Key(matchId),
-            UpdateExpression = "SET ProviderFixtureId = :fixture, Kickoff = :kickoff, "
-                + "HomeTeamFifaCode = :home, AwayTeamFifaCode = :away",
+            UpdateExpression = updateExpression,
             ConditionExpression = "attribute_exists(MatchId)",
-            ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-            {
-                [":fixture"] = new() { N = request.ProviderFixtureId.ToString(CultureInfo.InvariantCulture) },
-                [":kickoff"] = new(request.Kickoff.ToString("O", CultureInfo.InvariantCulture)),
-                [":home"] = new(request.HomeTeamFifaCode),
-                [":away"] = new(request.AwayTeamFifaCode)
-            }
+            ExpressionAttributeValues = values
         }, cancellationToken);
-        if (request.PrizeHandedOverAt is not null)
-        {
-            await client.UpdateItemAsync(new UpdateItemRequest
-            {
-                TableName = options.MatchesTableName,
-                Key = Key(matchId),
-                UpdateExpression = "SET PrizeHandedOverAt = :handedOverAt",
-                ExpressionAttributeValues = new Dictionary<string, AttributeValue>
-                {
-                    [":handedOverAt"] = new(request.PrizeHandedOverAt.Value.ToString("O", CultureInfo.InvariantCulture))
-                }
-            }, cancellationToken);
-        }
-        await schedules.EnsureAsync(ToPollingMatch(request with { Id = matchId }), cancellationToken);
     }
 
     public Task SyncMatchAsync(string matchId, CancellationToken cancellationToken) =>

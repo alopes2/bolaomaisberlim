@@ -12,6 +12,49 @@ export type MatchResponse = {
   awayTeamFifaCode: string;
 };
 
+export type MatchStatus = 'Active' | 'Upcoming' | 'Archived' | 'Closed';
+
+export type AdminMatch = {
+  id: string;
+  providerFixtureId: number;
+  kickoff: string;
+  homeTeamFifaCode: string;
+  awayTeamFifaCode: string;
+  providerStatus: string;
+  status: MatchStatus | null;
+};
+
+export type AdminMatchesResponse = {
+  matches: AdminMatch[];
+  lastSuccessfulSyncAt: string | null;
+  providerCallAvailable: boolean;
+};
+
+export type WorldCupSkipReasonCode = 'missing_fifa_code' | 'unsupported_team_code';
+
+export type SkippedWorldCupFixture = {
+  fixtureId: number;
+  reasonCode: WorldCupSkipReasonCode;
+};
+
+export type WorldCupSyncResponse = {
+  providerFetchPerformed: boolean;
+  lastSuccessfulSyncAt: string | null;
+  createdCount: number;
+  updatedCount: number;
+  statusChangeCount: number;
+  skippedFixtures: SkippedWorldCupFixture[];
+};
+
+export type CreateAdminMatchRequest = {
+  id: string;
+  providerFixtureId: number;
+  kickoff: string;
+  homeTeamFifaCode: string;
+  awayTeamFifaCode: string;
+  prizeHandedOverAt: string | null;
+};
+
 export type PredictionAnswers = {
   homeGoals: number;
   awayGoals: number;
@@ -79,6 +122,9 @@ export type AdminResultResponse = {
 };
 
 export interface AdminApi {
+  getAdminMatches(): Promise<AdminMatchesResponse>;
+  syncWorldCupMatches(): Promise<WorldCupSyncResponse>;
+  createAdminMatch(request: CreateAdminMatchRequest): Promise<void>;
   getAdminResult(matchId: string): Promise<AdminResultResponse>;
   getProvisionalLeaderboard(matchId: string): Promise<LeaderboardResponse>;
   saveAdminResult(matchId: string, result: AdminResultResponse): Promise<void>;
@@ -186,6 +232,34 @@ export class ApiClient implements ProfileApi, AdminApi {
     return (await response.json()) as AdminResultResponse;
   }
 
+  async getAdminMatches() {
+    const response = await this.authorizedFetch('/admin/matches');
+    if (!response.ok) {
+      throw await apiError(response, 'Não foi possível carregar os jogos.');
+    }
+    return (await response.json()) as AdminMatchesResponse;
+  }
+
+  async syncWorldCupMatches() {
+    const response = await this.authorizedFetch('/admin/matches/world-cup/sync', {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw await apiError(response, 'Não foi possível sincronizar os jogos.');
+    }
+    return (await response.json()) as WorldCupSyncResponse;
+  }
+
+  async createAdminMatch(request: CreateAdminMatchRequest) {
+    const response = await this.authorizedFetch('/admin/matches', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) {
+      throw await apiError(response, 'Não foi possível adicionar o jogo.');
+    }
+  }
+
   async getProvisionalLeaderboard(matchId: string) {
     const response = await this.authorizedFetch(
       `/admin/matches/${matchId}/provisional-leaderboard`,
@@ -231,3 +305,24 @@ export class ApiClient implements ProfileApi, AdminApi {
     });
   }
 }
+
+async function apiError(response: Response, fallback: string) {
+  try {
+    const problem = (await response.json()) as { code?: unknown };
+    if (typeof problem.code === 'string') {
+      const message = adminProblemMessages[problem.code];
+      if (message) return new Error(message);
+    }
+  } catch {
+    // The API may return an empty or non-JSON gateway response.
+  }
+  return new Error(fallback);
+}
+
+const adminProblemMessages: Record<string, string> = {
+  invalid_match: 'Revise os dados do jogo e tente novamente.',
+  match_exists: 'Já existe um jogo com este ID.',
+  fixture_sync_failed: 'Não foi possível importar os jogos da Copa do Mundo. Tente novamente.',
+  fixture_status_reconciliation_failed:
+    'Os jogos foram importados, mas os status não foram atualizados. Tente sincronizar novamente.',
+};

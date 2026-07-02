@@ -1,0 +1,2 @@
+GET https://v3.football.api-sports.io/fixtures?id=
+x-apisports-key: e892cf661b65df98e761ec0bb3ae2fff

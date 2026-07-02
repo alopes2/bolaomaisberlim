@@ -10,6 +10,7 @@ import { CurrentMatchPage } from '@/features/match/CurrentMatchPage'
 import { PrivacyPage } from '@/features/legal/PrivacyPage'
 import { RulesPage } from '@/features/legal/RulesPage'
 import { AdminMatchPage } from '@/features/admin/AdminMatchPage'
+import { AdminMatchesPage } from '@/features/admin/AdminMatchesPage'
 
 export function App({ api }: { api: ApiClient }) {
   const auth = useAuth()
@@ -51,7 +52,7 @@ export function App({ api }: { api: ApiClient }) {
     const matchId = new URLSearchParams(window.location.search).get('matchId')
     page = matchId
       ? <AdminMatchPage api={api} matchId={matchId} />
-      : <main className="p-4 text-sm text-muted-foreground">Informe o jogo com ?matchId=...</main>
+      : <AdminMatchesPage api={api} />
   } else if (profileQuery.isPending && !profileCompleted) {
     page = <main className="p-4 text-sm text-muted-foreground">Verificando perfil…</main>
   } else {

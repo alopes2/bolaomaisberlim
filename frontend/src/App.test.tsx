@@ -9,7 +9,10 @@ import { AuthContext, type AuthContextValue } from '@/auth/auth-context'
 
 import { App } from './App'
 
-function renderAuthenticatedApp(signOut: AuthContextValue['signOut']) {
+function renderAuthenticatedApp(
+  signOut: AuthContextValue['signOut'],
+  api: ApiClient = {} as ApiClient,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -27,7 +30,7 @@ function renderAuthenticatedApp(signOut: AuthContextValue['signOut']) {
   render(
     <AuthContext.Provider value={auth}>
       <QueryClientProvider client={queryClient}>
-        <App api={{} as ApiClient} />
+        <App api={api} />
       </QueryClientProvider>
     </AuthContext.Provider>,
   )
@@ -46,5 +49,52 @@ describe('App', () => {
     expect(screen.getByText('Bolão MaisBerlim')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Sair' }))
     expect(signOut).toHaveBeenCalledOnce()
+  })
+
+  it('shows match management on the admin landing route', async () => {
+    window.history.replaceState({}, '', '/admin')
+    const api = {
+      getAdminMatches: vi.fn().mockResolvedValue({
+        matches: [],
+        lastSuccessfulSyncAt: null,
+        providerCallAvailable: true,
+      }),
+    } as unknown as ApiClient
+
+    renderAuthenticatedApp(vi.fn(), api)
+
+    expect(await screen.findByText('Sincronizar Copa do Mundo')).toBeVisible()
+  })
+
+  it('keeps the result page for an admin match ID', async () => {
+    window.history.replaceState({}, '', '/admin?matchId=wc2026-123')
+    const api = {
+      getAdminResult: vi.fn().mockResolvedValue({
+        providerStatus: 'FT',
+        result: {
+          homeGoals: 2,
+          awayGoals: 1,
+          firstScorerKey: null,
+          homeTopScorerKeys: [],
+          awayTopScorerKeys: [],
+          homeYellowCards: 0,
+          awayYellowCards: 0,
+          homeRedCards: 0,
+          awayRedCards: 0,
+        },
+        unresolvedPlayers: [],
+        homeGoalEvents: 2,
+        awayGoalEvents: 1,
+      }),
+      getProvisionalLeaderboard: vi.fn().mockResolvedValue({ entries: [], roundWinner: null }),
+      saveAdminResult: vi.fn(),
+      confirmResult: vi.fn(),
+    } as unknown as ApiClient
+
+    renderAuthenticatedApp(vi.fn(), api)
+
+    expect(await screen.findByText('Apuração do jogo')).toBeVisible()
+    expect(api.getAdminResult).toHaveBeenCalledWith('wc2026-123')
+    expect(api.getProvisionalLeaderboard).toHaveBeenCalledWith('wc2026-123')
   })
 })

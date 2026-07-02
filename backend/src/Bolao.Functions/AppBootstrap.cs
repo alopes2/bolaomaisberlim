@@ -78,10 +78,18 @@ public static class AppBootstrap
         services.AddSingleton<IMatchRepository>(provider => provider.GetRequiredService<E2EState>());
         services.AddSingleton<IPredictionRepository>(provider => provider.GetRequiredService<E2EState>());
         services.AddSingleton<IAdminApi>(provider => provider.GetRequiredService<E2EState>());
+        services.AddSingleton<IMatchManagementStore>(provider => provider.GetRequiredService<E2EState>());
+        services.AddSingleton<IWorldCupSyncService>(provider => provider.GetRequiredService<E2EState>());
+        services.AddSingleton<IWorldCupSyncLock>(provider => provider.GetRequiredService<E2EState>());
+        services.AddSingleton<IMatchScheduleService>(provider => provider.GetRequiredService<E2EState>());
         services.AddSingleton<IResultConfirmationStore>(provider => provider.GetRequiredService<E2EState>());
         services.AddSingleton<IConfirmedResultPublisher>(provider => provider.GetRequiredService<E2EState>());
         services.AddSingleton<IWinnerNotificationService>(provider => provider.GetRequiredService<E2EState>());
         services.AddSingleton<IRosterCatalog>(_ => new JsonRosterCatalog(RosterPath()));
+        services.AddSingleton<MatchStatusService>();
+        services.AddSingleton<IMatchStatusLock, InMemoryMatchStatusLock>();
+        services.AddSingleton<IMatchStatusWaiter, MatchStatusWaiter>();
+        services.AddSingleton<MatchStatusCoordinator>();
         services.AddScoped<PredictionService>();
         services.AddScoped<ResultConfirmationService>();
     }
@@ -126,6 +134,13 @@ public static class AppBootstrap
             Required("SCHEDULER_INVOKE_ROLE_ARN")));
         services.AddScoped<MatchPollingHandler>();
         services.AddScoped<IAdminApi, DynamoAdminApi>();
+        services.AddScoped<IMatchManagementStore, DynamoMatchManagementStore>();
+        services.AddScoped<IWorldCupSyncLock, DynamoWorldCupSyncLock>();
+        services.AddScoped<MatchStatusService>();
+        services.AddScoped<IMatchStatusLock, DynamoMatchStatusLock>();
+        services.AddScoped<IMatchStatusWaiter, MatchStatusWaiter>();
+        services.AddScoped<MatchStatusCoordinator>();
+        services.AddScoped<IWorldCupSyncService, WorldCupSyncService>();
         services.AddScoped<PredictionService>();
         services.AddScoped<ResultPublicationService>();
         services.AddScoped<IConfirmedResultPublisher, ConfirmedResultPublisher>();

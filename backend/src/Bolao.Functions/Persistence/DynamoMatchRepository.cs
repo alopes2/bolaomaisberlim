@@ -31,6 +31,14 @@ public class DynamoMatchRepository(
             response.Item["MatchId"].S,
             DateTimeOffset.Parse(response.Item["Kickoff"].S),
             response.Item["HomeTeamFifaCode"].S,
-            response.Item["AwayTeamFifaCode"].S);
+            response.Item["AwayTeamFifaCode"].S,
+            MatchStatusValue(response.Item));
     }
+
+    private static MatchStatus? MatchStatusValue(
+        IReadOnlyDictionary<string, AttributeValue> item) =>
+        item.TryGetValue("Status", out var value)
+        && Enum.TryParse<MatchStatus>(value.S, out var status)
+            ? status
+            : null;
 }

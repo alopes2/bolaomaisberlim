@@ -3,17 +3,35 @@ using System.Text.Json.Serialization;
 
 namespace Bolao.Functions.Rosters;
 
-public class JsonRosterCatalog(string path) : IRosterCatalog
+public class JsonRosterCatalog : IRosterCatalog
 {
+    private readonly Lazy<Task<IReadOnlyList<JsonTeam>>> teams;
+
+    public JsonRosterCatalog(string path) : this(() => File.OpenRead(path))
+    {
+    }
+
+    public JsonRosterCatalog(Func<Stream> openStream)
+    {
+        teams = new Lazy<Task<IReadOnlyList<JsonTeam>>>(
+            () => ReadAsync(openStream),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    public async Task<bool> ContainsTeamAsync(
+        string fifaCode,
+        CancellationToken cancellationToken)
+    {
+        var roster = await teams.Value.WaitAsync(cancellationToken);
+        return roster.Any(candidate => candidate.FifaCode == fifaCode);
+    }
+
     public async Task<TeamRoster> GetTeamAsync(
         string fifaCode,
         CancellationToken cancellationToken)
     {
-        await using var stream = File.OpenRead(path);
-        var teams = await JsonSerializer.DeserializeAsync<List<JsonTeam>>(
-            stream,
-            cancellationToken: cancellationToken) ?? [];
-        var team = teams.FirstOrDefault(candidate => candidate.FifaCode == fifaCode)
+        var roster = await teams.Value.WaitAsync(cancellationToken);
+        var team = roster.FirstOrDefault(candidate => candidate.FifaCode == fifaCode)
             ?? throw new KeyNotFoundException($"Team '{fifaCode}' was not found.");
 
         return new TeamRoster(
@@ -25,6 +43,14 @@ public class JsonRosterCatalog(string path) : IRosterCatalog
                 player.Number,
                 player.Position,
                 player.Name)).ToList());
+    }
+
+    private static async Task<IReadOnlyList<JsonTeam>> ReadAsync(Func<Stream> openStream)
+    {
+        await using var stream = openStream();
+        return await JsonSerializer.DeserializeAsync<List<JsonTeam>>(
+            stream,
+            cancellationToken: CancellationToken.None) ?? [];
     }
 
     private record JsonTeam(

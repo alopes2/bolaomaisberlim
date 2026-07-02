@@ -118,6 +118,39 @@ resource "aws_iam_role_policy" "lambda_dynamodb" {
   })
 }
 
+resource "aws_iam_role_policy" "daily_sync_match_scan" {
+  name = "${local.name_prefix}-daily-sync-match-scan"
+  role = aws_iam_role.lambda["daily_sync"].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["dynamodb:Scan"]
+      Resource = aws_dynamodb_table.this["matches"].arn
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "match_polling_status_coordination" {
+  name = "${local.name_prefix}-match-polling-status-coordination"
+  role = aws_iam_role.lambda["match_polling"].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:Scan"]
+        Resource = aws_dynamodb_table.this["matches"].arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:DeleteItem"]
+        Resource = aws_dynamodb_table.this["api_usage"].arn
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "api_cognito" {
   name = "${local.name_prefix}-api-cognito"
   role = aws_iam_role.lambda["api"].id

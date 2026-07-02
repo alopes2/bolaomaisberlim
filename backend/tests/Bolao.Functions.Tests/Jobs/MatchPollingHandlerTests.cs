@@ -1,3 +1,4 @@
+using Bolao.Functions.Admin;
 using Bolao.Functions.Domain;
 using Bolao.Functions.FootballApi;
 using Bolao.Functions.Jobs;
@@ -30,11 +31,11 @@ public class MatchPollingHandlerTests
     [InlineData(FootballFixtureStatus.Finished, "FT")]
     [InlineData(FootballFixtureStatus.FinishedAfterExtraTime, "AET")]
     [InlineData(FootballFixtureStatus.FinishedAfterPenalties, "PEN")]
-    public async Task TerminalStateStoresProvisionalResultAndDeletesSchedule(
+    public async Task TerminalStateStoresProvisionalResultClosesMatchAndPromotesNextBrazilMatch(
         FootballFixtureStatus status,
         string providerStatus)
     {
-        var context = Context(Fixture(status, providerStatus));
+        var context = Context(Fixture(status, providerStatus), includeNextBrazilMatch: true);
 
         await context.Handler.ProcessAsync(new MatchPollingEvent("match-1"), default);
 
@@ -44,6 +45,26 @@ public class MatchPollingHandlerTests
         context.Results.Saved.Result.HomeTopScorerKeys.Should().ContainSingle("BRA:10");
         context.Results.Saved.Result.AwayTopScorerKeys.Should().ContainSingle("ARG:9");
         context.Results.Saved.UnresolvedPlayers.Should().BeEmpty();
+        context.Management.Statuses["match-1"].Should().Be(MatchStatus.Closed);
+        context.Management.Statuses["match-2"].Should().Be(MatchStatus.Active);
+        context.Schedule.Ensured.Should().ContainSingle()
+            .Which.MatchId.Should().Be("match-2");
+        context.Schedule.Deleted.Should().BeTrue();
+        context.Events.Should().ContainInOrder(
+            $"provider:match-1:{providerStatus}",
+            "result:match-1",
+            "status:match-1:Closed");
+    }
+
+    [Fact]
+    public async Task TerminalStateClosesMatchWhenThereIsNoNextBrazilMatch()
+    {
+        var context = Context(Fixture(FootballFixtureStatus.Finished, "FT"));
+
+        await context.Handler.ProcessAsync(new MatchPollingEvent("match-1"), default);
+
+        context.Management.Statuses["match-1"].Should().Be(MatchStatus.Closed);
+        context.Schedule.Ensured.Should().BeEmpty();
         context.Schedule.Deleted.Should().BeTrue();
     }
 
@@ -68,11 +89,16 @@ public class MatchPollingHandlerTests
     {
         var context = Context(
             Fixture(FootballFixtureStatus.Unknown, "2H"),
-            now: Kickoff.AddHours(4));
+            now: Kickoff.AddHours(4),
+            includeNextBrazilMatch: true);
 
         await context.Handler.ProcessAsync(new MatchPollingEvent("match-1"), default);
 
         context.Client.CallCount.Should().Be(0);
+        context.Management.Statuses["match-1"].Should().Be(MatchStatus.Closed);
+        context.Management.Statuses["match-2"].Should().Be(MatchStatus.Active);
+        context.Schedule.Ensured.Should().ContainSingle()
+            .Which.MatchId.Should().Be("match-2");
         context.Schedule.Deleted.Should().BeTrue();
     }
 
@@ -108,13 +134,33 @@ public class MatchPollingHandlerTests
     private static TestContext Context(
         FootballFixture fixture,
         DateTimeOffset? now = null,
-        IRosterCatalog? rosters = null)
+        IRosterCatalog? rosters = null,
+        bool includeNextBrazilMatch = false)
     {
-        var store = new StubPollingStore(new PollingMatch(
-            "match-1", 123, Kickoff, "BRA", "ARG"));
+        var events = new List<string>();
         var client = new StubFootballClient(fixture);
-        var results = new StubResultStore();
+        var results = new StubResultStore(events);
         var schedule = new StubScheduleService();
+        var managedMatches = new List<ManagedMatch>
+        {
+            new("match-1", 123, Kickoff, "BRA", "ARG", "NS", MatchStatus.Active)
+        };
+        if (includeNextBrazilMatch)
+        {
+            managedMatches.Add(new(
+                "match-2", 456, Kickoff.AddDays(4), "BRA", "FRA", "NS", MatchStatus.Upcoming));
+        }
+        var management = new StubManagementStore(managedMatches, events);
+        var store = new StubPollingStore(
+            new PollingMatch("match-1", 123, Kickoff, "BRA", "ARG"),
+            management,
+            events);
+        var clock = new FixedTimeProvider(now ?? Kickoff.AddHours(2));
+        var coordinator = new MatchStatusCoordinator(
+            management,
+            new MatchStatusService(),
+            schedule,
+            clock);
         var handler = new MatchPollingHandler(
             store,
             client,
@@ -124,8 +170,9 @@ public class MatchPollingHandlerTests
             ]),
             results,
             schedule,
-            new FixedTimeProvider(now ?? Kickoff.AddHours(2)));
-        return new TestContext(handler, store, client, results, schedule);
+            clock,
+            coordinator);
+        return new TestContext(handler, store, client, results, schedule, management, events);
     }
 
     private static FootballFixture Fixture(
@@ -157,9 +204,14 @@ public class MatchPollingHandlerTests
         StubPollingStore Store,
         StubFootballClient Client,
         StubResultStore Results,
-        StubScheduleService Schedule);
+        StubScheduleService Schedule,
+        StubManagementStore Management,
+        List<string> Events);
 
-    private sealed class StubPollingStore(PollingMatch match) : IMatchPollingStore
+    private sealed class StubPollingStore(
+        PollingMatch match,
+        StubManagementStore management,
+        List<string> events) : IMatchPollingStore
     {
         public string? Status { get; private set; }
         public Task<PollingMatch> GetAsync(string matchId, CancellationToken cancellationToken) =>
@@ -169,6 +221,8 @@ public class MatchPollingHandlerTests
         public Task SaveStatusAsync(string matchId, string status, CancellationToken cancellationToken)
         {
             Status = status;
+            management.UpdateProviderStatus(matchId, status);
+            events.Add($"provider:{matchId}:{status}");
             return Task.CompletedTask;
         }
     }
@@ -186,12 +240,13 @@ public class MatchPollingHandlerTests
         }
     }
 
-    private sealed class StubResultStore : IProvisionalResultStore
+    private sealed class StubResultStore(List<string> events) : IProvisionalResultStore
     {
         public ProvisionalResult? Saved { get; private set; }
         public Task SaveAsync(string matchId, ProvisionalResult result, CancellationToken cancellationToken)
         {
             Saved = result;
+            events.Add($"result:{matchId}");
             return Task.CompletedTask;
         }
     }
@@ -199,10 +254,50 @@ public class MatchPollingHandlerTests
     private sealed class StubScheduleService : IMatchScheduleService
     {
         public bool Deleted { get; private set; }
-        public Task EnsureAsync(PollingMatch match, CancellationToken cancellationToken) => Task.CompletedTask;
+        public List<PollingMatch> Ensured { get; } = [];
+        public Task EnsureAsync(PollingMatch match, CancellationToken cancellationToken)
+        {
+            Ensured.Add(match);
+            return Task.CompletedTask;
+        }
         public Task DeleteAsync(string matchId, CancellationToken cancellationToken)
         {
             Deleted = true;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubManagementStore(
+        IReadOnlyList<ManagedMatch> matches,
+        List<string> events) : IMatchManagementStore
+    {
+        private readonly Dictionary<string, ManagedMatch> managed = matches.ToDictionary(
+            match => match.Id,
+            StringComparer.Ordinal);
+        public Dictionary<string, MatchStatus> Statuses { get; } = matches.ToDictionary(
+            match => match.Id,
+            match => match.Status ?? MatchStatus.Archived);
+
+        public Task<IReadOnlyList<ManagedMatch>> ListAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<ManagedMatch>>(managed.Values.Select(match =>
+                match with { Status = Statuses[match.Id] }).ToArray());
+
+        public void UpdateProviderStatus(string matchId, string providerStatus) =>
+            managed[matchId] = managed[matchId] with { ProviderStatus = providerStatus };
+
+        public Task CreateManualAsync(ManagedMatch match, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> UpsertProviderAsync(ManagedMatch match, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task UpdateStatusAsync(
+            string matchId,
+            MatchStatus status,
+            CancellationToken cancellationToken)
+        {
+            Statuses[matchId] = status;
+            events.Add($"status:{matchId}:{status}");
             return Task.CompletedTask;
         }
     }

@@ -25,3 +25,10 @@ public record FootballFixture(
     FootballPlayer? FirstScorer,
     IReadOnlyDictionary<long, IReadOnlyDictionary<FootballPlayer, int>> ScorersByTeam,
     IReadOnlyDictionary<long, FootballCardTotals> CardsByTeam);
+
+public record FootballFixtureSummary(
+    long FixtureId,
+    DateTimeOffset Kickoff,
+    string ProviderStatus,
+    string? HomeTeamFifaCode,
+    string? AwayTeamFifaCode);

@@ -13,6 +13,10 @@ public class E2EState
         IMatchRepository,
         IPredictionRepository,
         IAdminApi,
+        IMatchManagementStore,
+        IWorldCupSyncService,
+        IWorldCupSyncLock,
+        IMatchScheduleService,
         IResultConfirmationStore,
         IConfirmedResultPublisher,
         IWinnerNotificationService
@@ -28,7 +32,8 @@ public class E2EState
     public E2EState(MutableE2ETimeProvider time)
     {
         Time = time;
-        match = new Match("match-e2e", time.GetUtcNow().AddMinutes(30), "BRA", "MEX");
+        match = new Match(
+            "match-e2e", time.GetUtcNow().AddMinutes(30), "BRA", "MEX", MatchStatus.Active);
         Reset();
     }
 
@@ -154,6 +159,53 @@ public class E2EState
     }
 
     public Task CreateMatchAsync(AdminMatchRequest request, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    public Task<IReadOnlyList<ManagedMatch>> ListAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<ManagedMatch>>([
+            new ManagedMatch(
+                match.Id, 1, match.Kickoff, match.HomeTeamFifaCode,
+                match.AwayTeamFifaCode, "NS", match.Status)
+        ]);
+
+    public Task CreateManualAsync(ManagedMatch managedMatch, CancellationToken cancellationToken)
+    {
+        match = managedMatch.ToMatch();
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> UpsertProviderAsync(
+        ManagedMatch managedMatch, CancellationToken cancellationToken) => Task.FromResult(true);
+
+    public Task UpdateStatusAsync(
+        string matchId, MatchStatus status, CancellationToken cancellationToken)
+    {
+        if (match.Id == matchId) match = match with { Status = status };
+        return Task.CompletedTask;
+    }
+
+    public Task<WorldCupSyncResult> SyncAsync(CancellationToken cancellationToken) =>
+        Task.FromResult(new WorldCupSyncResult(false, Time.GetUtcNow(), 0, 0, 0, []));
+
+    public Task<WorldCupSyncClaim?> TryClaimAsync(
+        DateTimeOffset now, CancellationToken cancellationToken) =>
+        Task.FromResult<WorldCupSyncClaim?>(null);
+
+    public Task CompleteAsync(
+        WorldCupSyncClaim claim, DateTimeOffset completedAt, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    public Task ReleaseAsync(WorldCupSyncClaim claim, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    public Task<WorldCupSyncLockStatus> GetStatusAsync(
+        DateTimeOffset now, CancellationToken cancellationToken) =>
+        Task.FromResult(new WorldCupSyncLockStatus(Time.GetUtcNow(), false));
+
+    public Task EnsureAsync(PollingMatch pollingMatch, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
+    public Task DeleteAsync(string matchId, CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
     public Task UpdateMatchAsync(

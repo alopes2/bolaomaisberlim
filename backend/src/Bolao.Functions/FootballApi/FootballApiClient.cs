@@ -54,6 +54,47 @@ public class FootballApiClient : IFootballApiClient
         return MapFixture(entries[0]);
     }
 
+    public async Task<IReadOnlyList<FootballFixtureSummary>> GetWorldCupFixturesAsync(
+        int season,
+        CancellationToken cancellationToken)
+    {
+        await quotaGuard.ReserveAsync(cancellationToken);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"fixtures?league=1&season={season}&timezone=Europe%2FBerlin");
+        request.Headers.Add("x-apisports-key", apiKey);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+
+        await RecordProviderQuotaAsync(response.Headers, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var root = document.RootElement;
+        if (root.TryGetProperty("errors", out var errors) && HasProviderErrors(errors))
+        {
+            throw new InvalidDataException("API-Football returned errors for the World Cup fixture list.");
+        }
+
+        var entries = root.GetProperty("response");
+        if (entries.GetArrayLength() == 0)
+        {
+            throw new InvalidDataException("API-Football returned no World Cup fixtures.");
+        }
+
+        return entries.EnumerateArray().Select(MapFixtureSummary).ToArray();
+    }
+
+    private static bool HasProviderErrors(JsonElement errors) => errors.ValueKind switch
+    {
+        JsonValueKind.Object => errors.EnumerateObject().Any(),
+        JsonValueKind.Array => errors.GetArrayLength() > 0,
+        JsonValueKind.String => !string.IsNullOrWhiteSpace(errors.GetString()),
+        JsonValueKind.Null or JsonValueKind.Undefined => false,
+        _ => true
+    };
+
     private async Task RecordProviderQuotaAsync(
         HttpResponseHeaders headers,
         CancellationToken cancellationToken)
@@ -92,6 +133,21 @@ public class FootballApiClient : IFootballApiClient
             MapScorers(goals),
             MapCards(entry.GetProperty("statistics"), homeTeamId, awayTeamId));
     }
+
+    private static FootballFixtureSummary MapFixtureSummary(JsonElement entry)
+    {
+        var fixture = entry.GetProperty("fixture");
+        var teams = entry.GetProperty("teams");
+        return new FootballFixtureSummary(
+            fixture.GetProperty("id").GetInt64(),
+            fixture.GetProperty("date").GetDateTimeOffset(),
+            fixture.GetProperty("status").GetProperty("short").GetString() ?? string.Empty,
+            TeamCode(teams.GetProperty("home")),
+            TeamCode(teams.GetProperty("away")));
+    }
+
+    private static string? TeamCode(JsonElement team) =>
+        team.TryGetProperty("code", out var code) ? code.GetString() : null;
 
     private static FootballFixtureStatus MapStatus(string? status) => status switch
     {

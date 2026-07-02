@@ -44,7 +44,9 @@ locals {
     "PUT /me/profile"
   ])
   admin_routes = toset([
+    "GET /admin/matches",
     "POST /admin/matches",
+    "POST /admin/matches/world-cup/sync",
     "PUT /admin/matches/{matchId}",
     "POST /admin/matches/{matchId}/sync",
     "GET /admin/matches/{matchId}/raw-result",

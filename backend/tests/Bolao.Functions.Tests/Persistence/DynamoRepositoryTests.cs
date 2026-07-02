@@ -1,5 +1,6 @@
 using Amazon.DynamoDBv2;
 using Amazon.DynamoDBv2.Model;
+using Bolao.Functions.Admin;
 using Bolao.Functions.Domain;
 using Bolao.Functions.Persistence;
 using FluentAssertions;
@@ -53,6 +54,131 @@ public class DynamoRepositoryTests
             DateTimeOffset.Parse("2026-06-29T18:00:00Z"),
             "BRA",
             "ARG"));
+    }
+
+    [Fact]
+    public async Task MatchRepositoryMapsStoredStatusAndLeavesLegacyStatusMissing()
+    {
+        var client = Substitute.For<IAmazonDynamoDB>();
+        client.GetItemAsync(Arg.Any<GetItemRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                MatchResponse("Active"),
+                MatchResponse(null));
+        var repository = new DynamoMatchRepository(client, Options());
+
+        var current = await repository.GetAsync("match-1", default);
+        var legacy = await repository.GetAsync("match-1", default);
+
+        current.Status.Should().Be(MatchStatus.Active);
+        legacy.Status.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ManualMatchCreationIsConditionalOnAUniqueId()
+    {
+        var client = Substitute.For<IAmazonDynamoDB>();
+        PutItemRequest? request = null;
+        client.PutItemAsync(
+                Arg.Do<PutItemRequest>(value => request = value),
+                Arg.Any<CancellationToken>())
+            .Returns(new PutItemResponse());
+        var store = new DynamoMatchManagementStore(client, Options());
+
+        await store.CreateManualAsync(ManagedMatch(), default);
+
+        request.Should().NotBeNull();
+        request!.ConditionExpression.Should().Be("attribute_not_exists(MatchId)");
+        request.Item["Status"].S.Should().Be("Upcoming");
+    }
+
+    [Fact]
+    public async Task ManualMatchCreationPropagatesDuplicateIdFailure()
+    {
+        var client = Substitute.For<IAmazonDynamoDB>();
+        client.PutItemAsync(Arg.Any<PutItemRequest>(), Arg.Any<CancellationToken>())
+            .Returns<Task<PutItemResponse>>(_ => throw new ConditionalCheckFailedException("duplicate"));
+        var store = new DynamoMatchManagementStore(client, Options());
+
+        var act = () => store.CreateManualAsync(ManagedMatch(), default);
+
+        await act.Should().ThrowAsync<ConditionalCheckFailedException>();
+    }
+
+    [Fact]
+    public async Task MatchManagementListCombinesEveryScanPage()
+    {
+        var client = Substitute.For<IAmazonDynamoDB>();
+        var nextKey = new Dictionary<string, AttributeValue>
+        {
+            ["MatchId"] = new("match-1")
+        };
+        var requests = new List<ScanRequest>();
+        client.ScanAsync(
+                Arg.Do<ScanRequest>(request => requests.Add(request)),
+                Arg.Any<CancellationToken>())
+            .Returns(
+                new ScanResponse
+                {
+                    Items = [ManagedItem("match-1")],
+                    LastEvaluatedKey = nextKey
+                },
+                new ScanResponse
+                {
+                    Items = [ManagedItem("match-2")],
+                    LastEvaluatedKey = []
+                });
+        var store = new DynamoMatchManagementStore(client, Options());
+
+        var matches = await store.ListAsync(default);
+
+        matches.Select(match => match.Id).Should().Equal("match-1", "match-2");
+        requests.Should().HaveCount(2);
+        requests.Should().OnlyContain(request => request.ConsistentRead == true);
+        requests[0].ExclusiveStartKey.Should().BeNull();
+        requests[1].ExclusiveStartKey.Should().BeSameAs(nextKey);
+    }
+
+    [Fact]
+    public async Task ProviderImportUpdatesOnlyProviderOwnedMatchAttributes()
+    {
+        var client = Substitute.For<IAmazonDynamoDB>();
+        UpdateItemRequest? request = null;
+        client.UpdateItemAsync(
+                Arg.Do<UpdateItemRequest>(value => request = value),
+                Arg.Any<CancellationToken>())
+            .Returns(new UpdateItemResponse());
+        var store = new DynamoMatchManagementStore(client, Options());
+
+        await store.UpsertProviderAsync(ManagedMatch(), default);
+
+        request.Should().NotBeNull();
+        request!.UpdateExpression.Should().Be(
+            "SET ProviderFixtureId = :fixture, Kickoff = :kickoff, "
+            + "HomeTeamFifaCode = :home, AwayTeamFifaCode = :away, "
+            + "ProviderStatus = :providerStatus");
+        request.ExpressionAttributeNames.Should().BeNull();
+        request.ExpressionAttributeValues.Keys.Should().BeEquivalentTo([
+            ":fixture", ":kickoff", ":home", ":away", ":providerStatus"
+        ]);
+        request.UpdateExpression.Should().NotContain("PrizeHandedOverAt");
+    }
+
+    [Fact]
+    public async Task StatusUpdateChangesOnlyStatusOnAnExistingMatch()
+    {
+        var client = Substitute.For<IAmazonDynamoDB>();
+        UpdateItemRequest? request = null;
+        client.UpdateItemAsync(
+                Arg.Do<UpdateItemRequest>(value => request = value),
+                Arg.Any<CancellationToken>())
+            .Returns(new UpdateItemResponse());
+        var store = new DynamoMatchManagementStore(client, Options());
+
+        await store.UpdateStatusAsync("match-1", MatchStatus.Closed, default);
+
+        request.Should().NotBeNull();
+        request!.UpdateExpression.Should().Be("SET #status = :status");
+        request.ConditionExpression.Should().Be("attribute_exists(MatchId)");
     }
 
     [Fact]
@@ -177,4 +303,41 @@ public class DynamoRepositoryTests
             0,
             1);
     }
+
+    private static ManagedMatch ManagedMatch() => new(
+        "match-1",
+        123,
+        DateTimeOffset.Parse("2026-07-01T18:00:00Z"),
+        "BRA",
+        "ARG",
+        "NS",
+        MatchStatus.Upcoming);
+
+    private static GetItemResponse MatchResponse(string? status)
+    {
+        var item = new Dictionary<string, AttributeValue>
+        {
+            ["MatchId"] = new("match-1"),
+            ["Kickoff"] = new("2026-06-29T18:00:00.0000000+00:00"),
+            ["HomeTeamFifaCode"] = new("BRA"),
+            ["AwayTeamFifaCode"] = new("ARG")
+        };
+        if (status is not null)
+        {
+            item["Status"] = new(status);
+        }
+
+        return new GetItemResponse { Item = item };
+    }
+
+    private static Dictionary<string, AttributeValue> ManagedItem(string id) => new()
+    {
+        ["MatchId"] = new(id),
+        ["ProviderFixtureId"] = new() { N = "123" },
+        ["Kickoff"] = new("2026-07-01T18:00:00.0000000+00:00"),
+        ["HomeTeamFifaCode"] = new("BRA"),
+        ["AwayTeamFifaCode"] = new("ARG"),
+        ["ProviderStatus"] = new("NS"),
+        ["Status"] = new("Upcoming")
+    };
 }

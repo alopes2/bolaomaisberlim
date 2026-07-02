@@ -20,7 +20,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ProvisionalLeaderboard } from './ProvisionalLeaderboard'
 import { ResultEditor } from './ResultEditor'
 
-export function AdminMatchPage({ api, matchId }: { api: AdminApi; matchId: string }) {
+type ResultAdminApi = Pick<AdminApi,
+  'getAdminResult' | 'getProvisionalLeaderboard' | 'saveAdminResult' | 'confirmResult'>
+
+export function AdminMatchPage({ api, matchId }: { api: ResultAdminApi; matchId: string }) {
   const queryClient = useQueryClient()
   const resultQuery = useQuery({
     queryKey: ['admin-result', matchId],
