@@ -3,6 +3,7 @@ using Bolao.Functions.Domain;
 using Bolao.Functions.FootballApi;
 using Bolao.Functions.Rosters;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 
 namespace Bolao.Functions.Tests.Admin;
@@ -255,6 +256,7 @@ public class WorldCupSyncServiceTests
         syncLock.TryClaimAsync(Now, default).Returns(claim);
         var store = Substitute.For<IMatchManagementStore>();
         var rosters = Substitute.For<IRosterCatalog>();
+        var logger = Substitute.For<ILogger<WorldCupSyncService>>();
         store.ListAsync(default).Returns([]);
         var coordinator = new MatchStatusCoordinator(
             store,
@@ -263,7 +265,7 @@ public class WorldCupSyncServiceTests
             new FixedTimeProvider(Now));
         var time = new FixedTimeProvider(Now);
         return new TestContext(
-            new WorldCupSyncService(football, syncLock, store, rosters, coordinator, time),
+            new WorldCupSyncService(football, syncLock, store, rosters, coordinator, time, logger),
             football,
             syncLock,
             store,
@@ -283,13 +285,15 @@ public class WorldCupSyncServiceTests
             new MatchStatusService(),
             Substitute.For<Bolao.Functions.Jobs.IMatchScheduleService>(),
             time);
+        var logger = Substitute.For<ILogger<WorldCupSyncService>>();
         return new WorldCupSyncService(
             football,
             syncLock,
             store,
             new SupportedRosterCatalog(),
             coordinator,
-            time);
+            time,
+            logger);
     }
 
     private static FootballFixtureSummary Fixture(

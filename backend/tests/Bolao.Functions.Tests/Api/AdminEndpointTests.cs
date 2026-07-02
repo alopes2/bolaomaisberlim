@@ -4,6 +4,10 @@ using System.Text.Json;
 using Bolao.Functions.Api;
 using Bolao.Functions.Admin;
 using FluentAssertions;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Bolao.Functions.Tests.Api;
 
@@ -80,27 +84,49 @@ public class AdminEndpointTests
     [Fact]
     public async Task WorldCupSynchronizationFailureReturnsStableGatewayError()
     {
-        await using var factory = new ParticipantEndpointTests.ApiFactory();
-        factory.State.SyncFailure = new WorldCupSyncException(
+        await using var baseFactory = new ParticipantEndpointTests.ApiFactory();
+        var logger = new RecordingLogger<WorldCupSyncService>();
+        await using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ILogger<WorldCupSyncService>>();
+            services.AddSingleton<ILogger<WorldCupSyncService>>(logger);
+        }));
+        baseFactory.State.SyncFailure = new WorldCupSyncException(
             false, new HttpRequestException("provider secret must not leak"));
 
-        var response = await AdminClient(factory).PostAsync("/admin/matches/world-cup/sync", null);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Subject", "admin-1");
+        client.DefaultRequestHeaders.Add("X-Test-Is-Admin", "true");
+        var response = await client.PostAsync("/admin/matches/world-cup/sync", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         var body = await response.Content.ReadAsStringAsync();
         JsonDocument.Parse(body).RootElement.GetProperty("code").GetString()
             .Should().Be("fixture_sync_failed");
         body.Should().NotContain("provider secret");
+        logger.Entries.Should().ContainSingle(entry =>
+            entry.Level == LogLevel.Error
+            && entry.Exception == baseFactory.State.SyncFailure
+            && entry.Message.Contains("before provider import completed"));
     }
 
     [Fact]
     public async Task PostImportReconciliationFailureReturnsAccurateStableError()
     {
-        await using var factory = new ParticipantEndpointTests.ApiFactory();
-        factory.State.SyncFailure = new WorldCupSyncException(
+        await using var baseFactory = new ParticipantEndpointTests.ApiFactory();
+        var logger = new RecordingLogger<WorldCupSyncService>();
+        await using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ILogger<WorldCupSyncService>>();
+            services.AddSingleton<ILogger<WorldCupSyncService>>(logger);
+        }));
+        baseFactory.State.SyncFailure = new WorldCupSyncException(
             true, new InvalidOperationException("scheduler secret must not leak"));
 
-        var response = await AdminClient(factory).PostAsync("/admin/matches/world-cup/sync", null);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Subject", "admin-1");
+        client.DefaultRequestHeaders.Add("X-Test-Is-Admin", "true");
+        var response = await client.PostAsync("/admin/matches/world-cup/sync", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var body = await response.Content.ReadAsStringAsync();
@@ -108,6 +134,10 @@ public class AdminEndpointTests
             .Should().Be("fixture_status_reconciliation_failed");
         body.Should().Contain("Fixtures were imported");
         body.Should().NotContain("scheduler secret");
+        logger.Entries.Should().ContainSingle(entry =>
+            entry.Level == LogLevel.Error
+            && entry.Exception == baseFactory.State.SyncFailure
+            && entry.Message.Contains("after provider import completed"));
     }
 
     [Fact]
@@ -311,4 +341,21 @@ public class AdminEndpointTests
         id, 456, DateTimeOffset.Parse("2026-07-10T18:00:00Z"), "BRA", "ARG");
 
     private record ApiError(string Code);
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, Exception? Exception, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, exception, formatter(state, exception)));
+    }
 }

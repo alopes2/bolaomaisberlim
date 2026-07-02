@@ -36,6 +36,7 @@ public static class AdminEndpoints
 
         admin.MapPost("/matches/world-cup/sync", async (
             IWorldCupSyncService sync,
+            ILogger<WorldCupSyncService> logger,
             CancellationToken cancellationToken) =>
         {
             try
@@ -48,6 +49,9 @@ public static class AdminEndpoints
             }
             catch (WorldCupSyncException exception) when (!exception.ProviderImportCompleted)
             {
+                logger.LogError(
+                    exception,
+                    "World Cup synchronization failed before provider import completed");
                 return Problem(
                     StatusCodes.Status502BadGateway,
                     "fixture_sync_failed",
@@ -55,6 +59,9 @@ public static class AdminEndpoints
             }
             catch (WorldCupSyncException exception) when (exception.ProviderImportCompleted)
             {
+                logger.LogError(
+                    exception,
+                    "World Cup synchronization failed after provider import completed");
                 return Problem(
                     StatusCodes.Status503ServiceUnavailable,
                     "fixture_status_reconciliation_failed",

@@ -32,7 +32,8 @@ public class WorldCupSyncService(
     IMatchManagementStore matches,
     IRosterCatalog rosters,
     MatchStatusCoordinator statuses,
-    TimeProvider timeProvider) : IWorldCupSyncService
+    TimeProvider timeProvider,
+    ILogger<WorldCupSyncService> logger) : IWorldCupSyncService
 {
     private const int Season = 2026;
 
@@ -54,6 +55,9 @@ public class WorldCupSyncService(
             }
             catch (Exception exception)
             {
+                logger.LogError(
+                    exception,
+                    "World Cup synchronization failed during local status recalculation");
                 throw new WorldCupSyncException(
                     currentStatus.LastSuccessfulSyncAt is not null, exception);
             }
@@ -109,6 +113,9 @@ public class WorldCupSyncService(
         }
         catch (Exception exception)
         {
+            logger.LogError(
+                exception,
+                "World Cup synchronization failed before provider import completed");
             await CleanupFailedImportAsync(claim);
             throw new WorldCupSyncException(false, exception);
         }
@@ -124,6 +131,9 @@ public class WorldCupSyncService(
         }
         catch (Exception exception)
         {
+            logger.LogError(
+                exception,
+                "World Cup synchronization failed during local status recalculation");
             throw new WorldCupSyncException(true, exception);
         }
         return new WorldCupSyncResult(
