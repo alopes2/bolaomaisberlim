@@ -115,7 +115,9 @@ public class WorldCupSyncService(
         {
             logger.LogError(
                 exception,
-                "World Cup synchronization failed before provider import completed");
+                "World Cup synchronization failed before provider import completed. With message: {Message}, and stack trace: {StackTrace}",
+                exception.Message,
+                exception.StackTrace);
             await CleanupFailedImportAsync(claim);
             throw new WorldCupSyncException(false, exception);
         }
@@ -133,7 +135,9 @@ public class WorldCupSyncService(
         {
             logger.LogError(
                 exception,
-                "World Cup synchronization failed during local status recalculation");
+                "World Cup synchronization failed during local status recalculation. With message: {Message}, and stack trace: {StackTrace}",
+                exception.Message,
+                exception.StackTrace);
             throw new WorldCupSyncException(true, exception);
         }
         return new WorldCupSyncResult(
