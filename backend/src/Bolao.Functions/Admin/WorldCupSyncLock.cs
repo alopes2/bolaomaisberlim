@@ -46,11 +46,12 @@ public class DynamoWorldCupSyncLock(
             {
                 TableName = options.ApiUsageTableName,
                 Key = Key(claim.Key),
-                UpdateExpression = "SET Owner = :owner, ClaimedAt = :claimedAt, #status = :inProgress",
+                UpdateExpression = "SET #owner = :owner, ClaimedAt = :claimedAt, #status = :inProgress",
                 ConditionExpression = "attribute_not_exists(Provider) OR "
                     + "(attribute_not_exists(CompletedAt) AND ClaimedAt < :staleBefore)",
                 ExpressionAttributeNames = new Dictionary<string, string>
                 {
+                    ["#owner"] = "Owner",
                     ["#status"] = "Status"
                 },
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
@@ -98,7 +99,11 @@ public class DynamoWorldCupSyncLock(
             {
                 TableName = options.ApiUsageTableName,
                 Key = Key(claim.Key),
-                ConditionExpression = "Owner = :owner AND attribute_not_exists(CompletedAt)",
+                ConditionExpression = "#owner = :owner AND attribute_not_exists(CompletedAt)",
+                ExpressionAttributeNames = new Dictionary<string, string>
+                {
+                    ["#owner"] = "Owner"
+                },
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
                     [":owner"] = new(claim.Owner)
@@ -186,11 +191,17 @@ public class DynamoWorldCupSyncLock(
             TableName = options.ApiUsageTableName,
             Key = Key(key),
             UpdateExpression = "SET CompletedAt = :completedAt, #status = :succeeded",
-            ConditionExpression = daily ? "Owner = :owner" : null,
-            ExpressionAttributeNames = new Dictionary<string, string>
-            {
-                ["#status"] = "Status"
-            },
+            ConditionExpression = daily ? "#owner = :owner" : null,
+            ExpressionAttributeNames = daily
+                ? new Dictionary<string, string>
+                {
+                    ["#owner"] = "Owner",
+                    ["#status"] = "Status"
+                }
+                : new Dictionary<string, string>
+                {
+                    ["#status"] = "Status"
+                },
             ExpressionAttributeValues = values
         };
     }

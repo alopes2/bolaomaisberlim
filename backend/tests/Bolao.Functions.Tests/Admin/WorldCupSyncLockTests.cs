@@ -28,6 +28,8 @@ public class WorldCupSyncLockTests
         request!.Key["Provider"].S.Should().Be("world-cup-sync:2026-07-01");
         request.ConditionExpression.Should().Contain("ClaimedAt < :staleBefore");
         request.ConditionExpression.Should().Contain("attribute_not_exists(CompletedAt)");
+        request.UpdateExpression.Should().Contain("#owner = :owner");
+        request.ExpressionAttributeNames["#owner"].Should().Be("Owner");
         request.ExpressionAttributeValues[":claimedAt"].S.Should().Be(now.ToString("O"));
     }
 
@@ -83,7 +85,8 @@ public class WorldCupSyncLockTests
 
         await syncLock.ReleaseAsync(claim!, default);
 
-        request!.ConditionExpression.Should().Be("Owner = :owner AND attribute_not_exists(CompletedAt)");
+        request!.ConditionExpression.Should().Be("#owner = :owner AND attribute_not_exists(CompletedAt)");
+        request.ExpressionAttributeNames["#owner"].Should().Be("Owner");
         request.ExpressionAttributeValues[":owner"].S.Should().Be(claim!.Owner);
     }
 
@@ -180,7 +183,10 @@ public class WorldCupSyncLockTests
             "world-cup-sync:last-success");
         request.TransactItems.Single(item =>
                 item.Update.Key["Provider"].S == "world-cup-sync:2026-06-30")
-            .Update.ConditionExpression.Should().Be("Owner = :owner");
+            .Update.ConditionExpression.Should().Be("#owner = :owner");
+        request.TransactItems.Single(item =>
+                item.Update.Key["Provider"].S == "world-cup-sync:2026-06-30")
+            .Update.ExpressionAttributeNames["#owner"].Should().Be("Owner");
     }
 
     [Fact]

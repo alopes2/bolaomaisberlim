@@ -25,6 +25,8 @@ public class MatchStatusLockTests
         request!.Key["Provider"].S.Should().Be("match-status-reconciliation");
         request.ConditionExpression.Should().Contain("attribute_not_exists(Provider)");
         request.ConditionExpression.Should().Contain("ClaimedAt < :staleBefore");
+        request.UpdateExpression.Should().Contain("#owner = :owner");
+        request.ExpressionAttributeNames["#owner"].Should().Be("Owner");
     }
 
     [Fact]
@@ -42,7 +44,8 @@ public class MatchStatusLockTests
         claim.Should().BeNull();
         await client.Received(1).DeleteItemAsync(
             Arg.Is<DeleteItemRequest>(request =>
-                request.ConditionExpression == "Owner = :owner"
+                request.ConditionExpression == "#owner = :owner"
+                && request.ExpressionAttributeNames["#owner"] == "Owner"
                 && request.ExpressionAttributeValues[":owner"].S == "mine"),
             default);
     }

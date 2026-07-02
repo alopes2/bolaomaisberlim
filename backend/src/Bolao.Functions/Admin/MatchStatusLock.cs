@@ -64,8 +64,12 @@ public sealed class DynamoMatchStatusLock(
             {
                 TableName = options.ApiUsageTableName,
                 Key = Key(),
-                UpdateExpression = "SET Owner = :owner, ClaimedAt = :claimedAt",
+                UpdateExpression = "SET #owner = :owner, ClaimedAt = :claimedAt",
                 ConditionExpression = "attribute_not_exists(Provider) OR ClaimedAt < :staleBefore",
+                ExpressionAttributeNames = new Dictionary<string, string>
+                {
+                    ["#owner"] = "Owner"
+                },
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
                     [":owner"] = new(claim.Owner),
@@ -91,7 +95,11 @@ public sealed class DynamoMatchStatusLock(
             {
                 TableName = options.ApiUsageTableName,
                 Key = Key(),
-                ConditionExpression = "Owner = :owner",
+                ConditionExpression = "#owner = :owner",
+                ExpressionAttributeNames = new Dictionary<string, string>
+                {
+                    ["#owner"] = "Owner"
+                },
                 ExpressionAttributeValues = new Dictionary<string, AttributeValue>
                 {
                     [":owner"] = new(claim.Owner)
